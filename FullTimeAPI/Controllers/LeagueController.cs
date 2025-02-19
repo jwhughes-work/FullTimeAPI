@@ -15,7 +15,7 @@ namespace FullTimeAPI.Controllers
             _leagueService = leagueService;
         }
 
-        // GET api/league/{leagueId}?teamName=someTeam
+        // GET api/league/{leagueId}
         [HttpGet("{leagueId}")]
         public async Task<IActionResult> GetLeague(string leagueId)
         {

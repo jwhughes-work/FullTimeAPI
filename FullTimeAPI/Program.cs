@@ -10,6 +10,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 builder.Services.AddHttpClient<IFixturesService, FixturesService>();
+builder.Services.AddHttpClient<IResultsService, ResultsService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddLogging();
 

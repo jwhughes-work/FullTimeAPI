@@ -26,7 +26,6 @@ namespace FullTimeAPI.Controllers
             }
             catch (Exception ex)
             {
-                // You can return more detailed error info if needed
                 return StatusCode(500, $"An error occurred: {ex.Message}");
             }
         }

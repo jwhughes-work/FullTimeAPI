@@ -1,0 +1,129 @@
+﻿using FullTimeAPI.Framework;
+using FullTimeAPI.Models;
+using HtmlAgilityPack;
+using Microsoft.Extensions.Caching.Memory;
+
+namespace FullTimeAPI.Services
+{
+    public class ResultsService : IResultsService
+    {
+        private readonly HttpClient _httpClient;
+        private readonly IMemoryCache _memoryCache;
+        private readonly ILogger<FixturesService> _logger;
+        private readonly TimeSpan _cacheDuration = TimeSpan.FromMinutes(30);
+        private const string BaseUrl = "https://fulltime.thefa.com/results.html";
+        private const int MaxItemsPerPage = 10000;
+
+        public ResultsService(HttpClient httpClient, IMemoryCache memoryCache, ILogger<FixturesService> logger)
+        {
+            _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+            _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        }
+
+        public async Task<List<Result>> GetResultsByLeague(string leagueId, string specificTeamName = "")
+        {
+            if (string.IsNullOrWhiteSpace(leagueId))
+                throw new ArgumentException("League ID cannot be empty", nameof(leagueId));
+
+            string cacheKey = $"Results-{leagueId}-{specificTeamName}";
+
+            if (_memoryCache.TryGetValue(cacheKey, out List<Result> cachedList) && cachedList?.Any() == true)
+            {
+                _logger.LogInformation("Retrieved results from cache for league {LeagueId}", leagueId);
+                return cachedList;
+            }
+
+            try
+            {
+                var results = await FetchAndParseResults(leagueId);
+                var filteredFixtures = FilterByTeam(results, specificTeamName);
+
+                _memoryCache.Set(cacheKey, filteredFixtures, DateTimeOffset.Now.Add(_cacheDuration));
+                return filteredFixtures;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching fixtures for league {LeagueId}", leagueId);
+                throw;
+            }
+        }
+
+        private async Task<List<Result>> FetchAndParseResults(string leagueId)
+        {
+            var url = $"{BaseUrl}?league={leagueId}&itemsPerPage={MaxItemsPerPage}";
+            var response = await _httpClient.GetAsync(url);
+            response.EnsureSuccessStatusCode();
+
+            var content = await response.Content.ReadAsStringAsync();
+            var document = new HtmlDocument();
+            document.LoadHtml(content);
+
+            var resultsNode = document.GetElementbyId("results-list");
+            if (resultsNode == null)
+            {
+                _logger.LogWarning("No results list found for season");
+                return new List<Result>();
+            }
+
+            var resultNodes = resultsNode.SelectNodes("div/div[3]/div/div[2]/div");
+            if (resultNodes == null)
+            {
+                _logger.LogWarning("No result nodes found for season");
+                return new List<Result>();
+            }
+
+            return resultNodes.Select(ParseResultRow).Where(result => result != null).ToList();
+        }
+
+        private Result ParseResultRow(HtmlNode item)
+        {
+            try
+            {
+                var fixtureDateTime = Helpers.NormalizeText(item.SelectSingleNode(".//div[@class='datetime-col']")?.InnerText ?? string.Empty);
+                var homeTeam = Helpers.NormalizeText(item.SelectSingleNode(".//div[@class='home-team-col flex middle right']")?.InnerText ?? string.Empty);
+                var awayTeam = Helpers.NormalizeText(item.SelectSingleNode(".//div[@class='road-team-col flex middle left']")?.InnerText ?? string.Empty);
+                var rawScore = Helpers.NormalizeText(item.SelectSingleNode(".//div[@class='score-col']")?.InnerText ?? string.Empty);
+                var division = Helpers.NormalizeText(item.SelectSingleNode(".//div[@class='fg-col']")?.InnerText ?? string.Empty);
+
+                var scoreForSplitting = rawScore;
+                var parenIndex = rawScore.IndexOf('(');
+                if (parenIndex >= 0)
+                {
+                    scoreForSplitting = rawScore.Substring(0, parenIndex).Trim();
+                }
+                var scoreParts = scoreForSplitting.Split('-');
+                string homeScore = scoreParts.Length > 0 ? scoreParts[0].Trim() : string.Empty;
+                string awayScore = scoreParts.Length > 1 ? scoreParts[1].Trim() : string.Empty;
+
+                return new Result
+                {
+                    FixtureDateTime = fixtureDateTime,
+                    HomeTeam = homeTeam,
+                    AwayTeam = awayTeam,
+                    Score = rawScore,
+                    HomeScore = homeScore,
+                    AwayScore = awayScore,
+                    Division = division
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error parsing match result row");
+                return null;
+            }
+        }
+
+        private List<Result> FilterByTeam(List<Result> results, string specificTeamName)
+        {
+            if (string.IsNullOrEmpty(specificTeamName))
+                return results;
+
+            return results
+                .Where(f => f.AwayTeam.Contains(specificTeamName, StringComparison.OrdinalIgnoreCase) ||
+                            f.HomeTeam.Contains(specificTeamName, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+
+    }
+}

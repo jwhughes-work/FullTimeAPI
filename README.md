@@ -1,4 +1,6 @@
-# FullTime API
+# Unofficial FullTime API
+
+**Disclaimer: This is an unofficial API and is not endorsed or supported by The Football Association (The FA).**
 
 FullTime API is an open source RESTful API that retrieves football data from [FullTime](https://fulltime.thefa.com/). It scrapes the FullTime website provided by The FA to provide structured, JSON-formatted data for fixtures, match results, league tables, and player statistics.
 

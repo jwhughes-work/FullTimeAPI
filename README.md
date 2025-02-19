@@ -32,11 +32,11 @@ Example of a BETA verison of this API is in use at: [Axbridge United](https://ut
    git clone https://github.com/jwhughes-work/FullTimeAPI.git
    cd FullTimeAPI
 
-2. Build the Project:
+3. Build the Project:
 
    dotnet build
 
-3. Run the Project:
+4. Run the Project:
 
    dotnet run
 

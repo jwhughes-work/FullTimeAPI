@@ -27,6 +27,8 @@ Example of a BETA verison of this API is in use at: [Axbridge United](https://ut
 
 ### Installation
 
+Working verion to test: [Fulltime API](https://faapi.jwhsolutions.co.uk/swagger/index.html)
+
 1. Clone the Repository:
 
    git clone https://github.com/jwhughes-work/FullTimeAPI.git

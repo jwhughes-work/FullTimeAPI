@@ -47,6 +47,11 @@ Example of a BETA verison of this API is in use at: [Axbridge United](https://ut
 - GET /api/fixtures/{leagueId}?teamName={OptionalTeamName}  
   Retrieves fixtures for the specified league. You can optionally filter the fixtures by providing a specific team name.
 
+### Results
+
+- GET /api/results/{leagueId}?teamName={OptionalTeamName}  
+  Retrieves resutls for the specified league. You can optionally filter the results by providing a specific team name.
+
 ## Contributing
 
 Contributions are welcome! If you’d like to improve the API or add new features.

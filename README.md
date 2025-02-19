@@ -54,6 +54,11 @@ Example of a BETA verison of this API is in use at: [Axbridge United](https://ut
 - GET /api/results/{leagueId}?teamName={OptionalTeamName}  
   Retrieves resutls for the specified league. You can optionally filter the results by providing a specific team name.
 
+### Leauge
+
+- GET /api/league/{leagueId} 
+  Retrieves table for the specified league.
+
 ## Contributing
 
 Contributions are welcome! If you’d like to improve the API or add new features.

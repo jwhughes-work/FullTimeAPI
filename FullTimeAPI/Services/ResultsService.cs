@@ -9,12 +9,12 @@ namespace FullTimeAPI.Services
     {
         private readonly HttpClient _httpClient;
         private readonly IMemoryCache _memoryCache;
-        private readonly ILogger<FixturesService> _logger;
+        private readonly ILogger<ResultsService> _logger;
         private readonly TimeSpan _cacheDuration = TimeSpan.FromMinutes(30);
         private const string BaseUrl = "https://fulltime.thefa.com/results.html";
         private const int MaxItemsPerPage = 10000;
 
-        public ResultsService(HttpClient httpClient, IMemoryCache memoryCache, ILogger<FixturesService> logger)
+        public ResultsService(HttpClient httpClient, IMemoryCache memoryCache, ILogger<ResultsService> logger)
         {
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
             _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));

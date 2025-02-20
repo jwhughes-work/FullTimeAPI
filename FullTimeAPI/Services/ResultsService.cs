@@ -21,22 +21,22 @@ namespace FullTimeAPI.Services
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
-        public async Task<List<Result>> GetResultsByLeague(string leagueId, string specificTeamName = "")
+        public async Task<List<Result>> GetResultsByLeague(string divisionId, string specificTeamName = "")
         {
-            if (string.IsNullOrWhiteSpace(leagueId))
-                throw new ArgumentException("League ID cannot be empty", nameof(leagueId));
+            if (string.IsNullOrWhiteSpace(divisionId))
+                throw new ArgumentException("League ID cannot be empty", nameof(divisionId));
 
-            string cacheKey = $"Results-{leagueId}-{specificTeamName}";
+            string cacheKey = $"Results-{divisionId}-{specificTeamName}";
 
             if (_memoryCache.TryGetValue(cacheKey, out List<Result> cachedList) && cachedList?.Any() == true)
             {
-                _logger.LogInformation("Retrieved results from cache for league {LeagueId}", leagueId);
+                _logger.LogInformation("Retrieved results from cache for league {LeagueId}", divisionId);
                 return cachedList;
             }
 
             try
             {
-                var results = await FetchAndParseResults(leagueId);
+                var results = await FetchAndParseResults(divisionId);
                 var filteredFixtures = FilterByTeam(results, specificTeamName);
 
                 _memoryCache.Set(cacheKey, filteredFixtures, DateTimeOffset.Now.Add(_cacheDuration));
@@ -44,14 +44,14 @@ namespace FullTimeAPI.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching fixtures for league {LeagueId}", leagueId);
+                _logger.LogError(ex, "Error fetching fixtures for league {divisionId}", divisionId);
                 throw;
             }
         }
 
-        private async Task<List<Result>> FetchAndParseResults(string leagueId)
+        private async Task<List<Result>> FetchAndParseResults(string divisionId)
         {
-            var url = $"{BaseUrl}?league={leagueId}&itemsPerPage={MaxItemsPerPage}";
+            var url = $"{BaseUrl}?selectedDivision={divisionId}&itemsPerPage={MaxItemsPerPage}";
             var response = await _httpClient.GetAsync(url);
             response.EnsureSuccessStatusCode();
 

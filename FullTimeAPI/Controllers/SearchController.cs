@@ -15,9 +15,9 @@ namespace FullTimeAPI.Controllers
         }
 
         /// <summary>
-        /// Searches for clubs by name.
+        /// Searches for clubs by entering name (or part of name) Will return ClubId.
         /// </summary>
-        /// <param name="clubName">The club name to search for</param>
+        /// <param name="clubName">Club name to search for</param>
         /// <returns>List of matching clubs</returns>
         /// <response code="200">Returns the list of clubs</response>
         /// <response code="500">If an error occurs</response>
@@ -38,7 +38,7 @@ namespace FullTimeAPI.Controllers
         }
 
         /// <summary>
-        /// Gets all teams for a specific club by ID.
+        /// Gets all teams for a specific club by ClubId.
         /// </summary>
         /// <param name="clubId">The club ID</param>
         /// <returns>List of teams within the club</returns>

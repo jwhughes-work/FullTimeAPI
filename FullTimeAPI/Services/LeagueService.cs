@@ -36,21 +36,21 @@ namespace FullTimeAPI.Services
 
             try
             {
-                var leagueTable = await FetchAndParseLeague(divionId);
+                var leagueTable = await FetchAndParseDivision(divionId);
 
                 _memoryCache.Set(cacheKey, leagueTable, DateTimeOffset.Now.Add(_cacheDuration));
                 return leagueTable;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching league {LeagueId}", divionId);
+                _logger.LogError(ex, "Error fetching league {divionId}", divionId);
                 throw;
             }
         }
 
-        private async Task<List<LeagueTable>> FetchAndParseLeague(string leagueId)
+        private async Task<List<LeagueTable>> FetchAndParseDivision(string divisonId)
         {
-            var url = $"{BaseUrl}?selectedDivision={leagueId}&itemsPerPage={MaxItemsPerPage}";
+            var url = $"{BaseUrl}?selectedDivision={divisonId}&itemsPerPage={MaxItemsPerPage}";
             var response = await _httpClient.GetAsync(url);
             response.EnsureSuccessStatusCode();
 
@@ -68,7 +68,7 @@ namespace FullTimeAPI.Services
             var resultNodes = resultsNode.SelectNodes("//div[@class='table-scroll']/table/tbody/tr");
             if (resultNodes == null)
             {
-                _logger.LogWarning("No result nodes found for league");
+                _logger.LogWarning("No result nodes found for division");
                 return new List<LeagueTable>();
             }
 

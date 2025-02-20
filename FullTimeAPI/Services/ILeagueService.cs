@@ -4,6 +4,6 @@ namespace FullTimeAPI.Services
 {
     public interface ILeagueService
     {
-        Task<List<LeagueTable>> GetLeagueStandings(string leagueId);
+        Task<List<LeagueTable>> GetLeagueStandings(string divisionId);
     }
 }

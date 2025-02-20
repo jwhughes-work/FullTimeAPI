@@ -15,13 +15,19 @@ namespace FullTimeAPI.Controllers
             _leagueService = leagueService;
         }
 
-        // GET api/league/{leagueId}
-        [HttpGet("{leagueId}")]
-        public async Task<IActionResult> GetLeague(string leagueId)
+        /// <summary>
+        /// Retrieves the league table for a given division
+        /// </summary>
+        /// <param name="divisionId">The ID of the division to retrieve the table for.</param>
+        /// <returns>A list fo the divion table</returns>
+        /// <response code="200">Returns the list of results</response>
+        /// <response code="500">If an error occurs</response>
+        [HttpGet("{divisionId}")]
+        public async Task<IActionResult> GetLeague(string divisionId)
         {
             try
             {
-                var results = await _leagueService.GetLeagueStandings(leagueId);
+                var results = await _leagueService.GetLeagueStandings(divisionId);
                 return Ok(results);
             }
             catch (Exception ex)

@@ -15,13 +15,20 @@ namespace FullTimeAPI.Controllers
             _fixturesService = fixturesService;
         }
 
-        // GET api/fixtures/{leagueId}?teamName=someTeam
-        [HttpGet("{leagueId}")]
-        public async Task<IActionResult> GetFixtures(string leagueId, [FromQuery] string teamName = "")
+        /// <summary>
+        /// Retrieves fixtures for a given division or a specific team in that division.
+        /// </summary>
+        /// <param name="divisionId">The ID of the division to retrieve fixtures for.</param>
+        /// <param name="teamName">Optional: The team name (or part of) to filter fixtures (default is an empty string).</param>
+        /// <returns>A list of fixtures matching the division/team.</returns>
+        /// <response code="200">Returns the list of fixtures</response>
+        /// <response code="500">If an error occurs</response>
+        [HttpGet("{divisionId}")]
+        public async Task<IActionResult> GetFixtures(string divisionId, [FromQuery] string teamName = "")
         {
             try
             {
-                var fixtures = await _fixturesService.GetFixturesByLeague(leagueId, teamName);
+                var fixtures = await _fixturesService.GetFixturesByDivision(divisionId, teamName);
                 return Ok(fixtures);
             }
             catch (Exception ex)

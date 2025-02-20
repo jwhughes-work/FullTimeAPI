@@ -12,6 +12,7 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddHttpClient<IFixturesService, FixturesService>();
 builder.Services.AddHttpClient<IResultsService, ResultsService>();
 builder.Services.AddHttpClient<ILeagueService, LeagueService>();
+builder.Services.AddHttpClient<IClubService, ClubService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddLogging();
 

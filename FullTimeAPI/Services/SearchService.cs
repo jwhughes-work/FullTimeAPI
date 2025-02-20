@@ -12,8 +12,7 @@ namespace FullTimeAPI.Services
         private readonly IMemoryCache _memoryCache;
         private readonly ILogger<FixturesService> _logger;
         private readonly TimeSpan _cacheDuration = TimeSpan.FromMinutes(30);
-        private const string BaseUrl = "https://fulltime.thefa.com/home/search.html";
-
+        
         public SearchService(HttpClient httpClient, IMemoryCache memoryCache, ILogger<FixturesService> logger)
         {
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
@@ -21,9 +20,10 @@ namespace FullTimeAPI.Services
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
-        public async Task<List<ClubSearch>> FindClubs(string searchName) 
+        #region FindClubs
+        public async Task<List<ClubSearch>> FindClubs(string searchName)
         {
-            if(string.IsNullOrEmpty(searchName))
+            if (string.IsNullOrEmpty(searchName))
                 throw new ArgumentException("club name cannot be empty", nameof(searchName));
 
             string cacheKey = $"ClubSearch-{searchName}";
@@ -49,7 +49,7 @@ namespace FullTimeAPI.Services
 
         private async Task<List<ClubSearch>> FetchAndParseClubSearch(string team)
         {
-            var url = $"{BaseUrl}?partLeagueOrClubNameSearchFilter={team}&clubSearchFilter=true";
+            var url = $"https://fulltime.thefa.com/home/search.html?partLeagueOrClubNameSearchFilter={team}&clubSearchFilter=true";
             var response = await _httpClient.GetAsync(url);
             response.EnsureSuccessStatusCode();
 
@@ -73,14 +73,14 @@ namespace FullTimeAPI.Services
             {
                 var href = item.GetAttributeValue("href", "");
                 var clubId = href.Split('/').Last().Replace(".html", "");
-                
+
                 var nameNode = item.SelectSingleNode(".//p[@class='bold nomargin truncate']");
                 if (nameNode == null)
                 {
                     _logger.LogWarning("Club name not found for {href}", href);
                     return null;
                 }
-                
+
                 string clubName = string.Join("", nameNode.ChildNodes.Select(node => node.InnerText)).Trim();
 
                 var teamsNode = item.SelectSingleNode(".//p[@class='smaller']/strong");
@@ -103,7 +103,9 @@ namespace FullTimeAPI.Services
                 return null;
             }
         }
+        #endregion
 
+        #region FindTeams
         public async Task<List<TeamSearch>> FindTeamsByClub(string clubId)
         {
             if (string.IsNullOrEmpty(clubId))
@@ -194,5 +196,92 @@ namespace FullTimeAPI.Services
                 return null;
             }
         }
+        #endregion
+
+        #region FindLeagues
+        public async Task<List<LeagueSearch>> FindLeagues(string searchName)
+        {
+            if (string.IsNullOrEmpty(searchName))
+                throw new ArgumentException("league name cannot be empty", nameof(searchName));
+
+            string cacheKey = $"LeagueSearch-{searchName}";
+
+            if (_memoryCache.TryGetValue(cacheKey, out List<LeagueSearch> cachedList) && cachedList?.Any() == true)
+            {
+                _logger.LogInformation("Retrieved club search");
+                return cachedList;
+            }
+
+            try
+            {
+                var leagues = await FetchAndParseLeagueSearch(searchName);
+                _memoryCache.Set(cacheKey, leagues, DateTimeOffset.Now.Add(_cacheDuration));
+                return leagues;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching leagues search");
+                throw;
+            }
+        }
+
+        private async Task<List<LeagueSearch>> FetchAndParseLeagueSearch(string team)
+        {
+            var url = $"https://fulltime.thefa.com/home/search.html?partLeagueOrClubNameSearchFilter={team}&clubSearchFilter=false";
+            var response = await _httpClient.GetAsync(url);
+            response.EnsureSuccessStatusCode();
+
+            var content = await response.Content.ReadAsStringAsync();
+            var document = new HtmlDocument();
+            document.LoadHtml(content);
+
+            var results = document.DocumentNode.SelectNodes("//a[contains(@href, '/Index.do?league')]");
+            if (results == null)
+            {
+                _logger.LogWarning("No clubs found for search {team}", team);
+                return new List<LeagueSearch>();
+            }
+
+            return results.Select(ParseLeaugeRow).Where(fixture => fixture != null).ToList();
+        }
+
+        private LeagueSearch ParseLeaugeRow(HtmlNode item)
+        {
+            try
+            {
+                var href = item.GetAttributeValue("href", "");
+                
+                var queryParams = href.Split('?').Last().Split('&')
+                    .Select(p => p.Split('='))
+                    .Where(p => p.Length == 2)
+                    .ToDictionary(p => p[0], p => p[1]);
+
+                if (!queryParams.TryGetValue("league", out var leagueId))
+                {
+                    _logger.LogWarning("League ID not found in href: {href}", href);
+                    return null;
+                }
+
+                var nameNode = item;
+                if (nameNode == null)
+                {
+                    _logger.LogWarning("League name not found for league ID: {leagueId}");
+                    return null;
+                }
+                string leagueName = string.Join("", nameNode.ChildNodes.Select(node => node.InnerText)).Trim();
+
+                return new LeagueSearch
+                {
+                    Id = leagueId,
+                    Name = leagueName
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error parsing club row");
+                return null;
+            }
+        }
+        #endregion
     }
 }

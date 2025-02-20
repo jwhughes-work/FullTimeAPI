@@ -59,5 +59,29 @@ namespace FullTimeAPI.Controllers
                 return StatusCode(500, $"An error occurred: {ex.Message}");
             }
         }
+
+        /// <summary>
+        /// Searches for leagues by entering name (or part of name) Will return LeagueId.
+        /// </summary>
+        /// <param name="leagueName">League name to search for</param>
+        /// <returns>List of matching leagues</returns>
+        /// <response code="200">Returns the list of leagues</response>
+        /// <response code="500">If an error occurs</response>
+        [HttpGet("leagues/{leagueName}")]
+        [ProducesResponseType(200)]
+        [ProducesResponseType(500)]
+        public async Task<IActionResult> GetLeaguesByName(string leagueName)
+        {
+            try
+            {
+                var results = await _clubService.FindLeagues(leagueName);
+                return Ok(results);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"An error occurred: {ex.Message}");
+            }
+        }
+
     }
 }

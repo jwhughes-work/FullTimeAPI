@@ -46,20 +46,7 @@ Working verion to test: [Fulltime API](https://faapi.jwhsolutions.co.uk/swagger/
 
 ## API Endpoints
 
-### Fixtures
-
-- GET /api/fixtures/{leagueId}?teamName={OptionalTeamName}  
-  Retrieves fixtures for the specified league. You can optionally filter the fixtures by providing a specific team name.
-
-### Results
-
-- GET /api/results/{leagueId}?teamName={OptionalTeamName}  
-  Retrieves resutls for the specified league. You can optionally filter the results by providing a specific team name.
-
-### Leauge
-
-- GET /api/league/{leagueId} 
-  Retrieves table for the specified league.
+Check out the Swagger Here and try it out!: [Fulltime API](https://faapi.jwhsolutions.co.uk/swagger/index.html)
 
 ## Contributing
 

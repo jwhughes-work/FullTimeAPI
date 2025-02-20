@@ -1,5 +1,6 @@
 ﻿using FullTimeAPI.Services.Interfaces;
 using Microsoft.AspNetCore.Mvc;
+using Swashbuckle.AspNetCore.Annotations;
 
 namespace FullTimeAPI.Controllers
 {
@@ -19,6 +20,12 @@ namespace FullTimeAPI.Controllers
         /// </summary>
         /// <param name="clubName">Club name to search for</param>
         /// <returns>List of matching clubs</returns>
+        /// <remarks>
+        /// Sample Club Name:
+        ///
+        /// Axbridge
+        ///
+        /// </remarks>
         /// <response code="200">Returns the list of clubs</response>
         /// <response code="500">If an error occurs</response>
         [HttpGet("clubs/{clubName}")]
@@ -42,6 +49,12 @@ namespace FullTimeAPI.Controllers
         /// </summary>
         /// <param name="clubId">The club ID</param>
         /// <returns>List of teams within the club</returns>
+        /// <remarks>
+        /// Sample Club Id:
+        ///
+        /// 462688870
+        ///
+        /// </remarks>
         /// <response code="200">Returns the list of teams</response>
         /// <response code="500">If an error occurs</response>
         [HttpGet("teams/{clubId}")]
@@ -65,6 +78,12 @@ namespace FullTimeAPI.Controllers
         /// </summary>
         /// <param name="leagueName">League name to search for</param>
         /// <returns>List of matching leagues</returns>
+        /// /// <remarks>
+        /// Sample League Name:
+        ///
+        /// Weston
+        ///
+        /// </remarks>
         /// <response code="200">Returns the list of leagues</response>
         /// <response code="500">If an error occurs</response>
         [HttpGet("leagues/{leagueName}")]

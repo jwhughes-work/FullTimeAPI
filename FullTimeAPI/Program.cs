@@ -1,5 +1,6 @@
 using FullTimeAPI.Services;
 using FullTimeAPI.Services.Interfaces;
+using Microsoft.OpenApi.Models;
 using System.Reflection;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -13,6 +14,12 @@ builder.Services.AddSwaggerGen(options =>
 {
     var xmlFilename = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
     options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, xmlFilename));
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Version = "v1",
+        Title = "FullTime API",
+        Description = "FullTime API is an open source RESTful service that scrapes football data from FullTime, providing easy access to fixtures, results, league tables, and player stats.",
+    });
 });
 
 builder.Services.AddHttpClient<IFixturesService, FixturesService>();

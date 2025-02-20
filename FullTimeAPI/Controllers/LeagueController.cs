@@ -1,4 +1,4 @@
-﻿using FullTimeAPI.Services;
+﻿using FullTimeAPI.Services.Interfaces;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 

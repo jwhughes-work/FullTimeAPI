@@ -1,8 +1,8 @@
 ﻿using FullTimeAPI.Models;
 
-namespace FullTimeAPI.Services
+namespace FullTimeAPI.Services.Interfaces
 {
-    public interface IClubService
+    public interface ISearchService
     {
         Task<List<ClubSearch>> FindClubs(string searchName);
         Task<List<TeamSearch>> FindTeamsByClub(string clubId);

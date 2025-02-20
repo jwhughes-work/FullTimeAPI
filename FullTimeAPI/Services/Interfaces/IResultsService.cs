@@ -1,6 +1,6 @@
 ﻿using FullTimeAPI.Framework;
 
-namespace FullTimeAPI.Services
+namespace FullTimeAPI.Services.Interfaces
 {
     public interface IResultsService
     {

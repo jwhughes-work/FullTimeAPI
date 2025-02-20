@@ -1,11 +1,12 @@
 ﻿using FullTimeAPI.Framework;
 using FullTimeAPI.Models;
+using FullTimeAPI.Services.Interfaces;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace FullTimeAPI.Services
 {
-    public class ClubService : IClubService
+    public class SearchService : ISearchService
     {
         private readonly HttpClient _httpClient;
         private readonly IMemoryCache _memoryCache;
@@ -13,7 +14,7 @@ namespace FullTimeAPI.Services
         private readonly TimeSpan _cacheDuration = TimeSpan.FromMinutes(30);
         private const string BaseUrl = "https://fulltime.thefa.com/home/search.html";
 
-        public ClubService(HttpClient httpClient, IMemoryCache memoryCache, ILogger<FixturesService> logger)
+        public SearchService(HttpClient httpClient, IMemoryCache memoryCache, ILogger<FixturesService> logger)
         {
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
             _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));

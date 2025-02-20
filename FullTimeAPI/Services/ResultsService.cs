@@ -1,5 +1,6 @@
 ﻿using FullTimeAPI.Framework;
 using FullTimeAPI.Models;
+using FullTimeAPI.Services.Interfaces;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Caching.Memory;
 

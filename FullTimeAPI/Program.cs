@@ -1,4 +1,5 @@
 using FullTimeAPI.Services;
+using FullTimeAPI.Services.Interfaces;
 using System.Reflection;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -17,7 +18,7 @@ builder.Services.AddSwaggerGen(options =>
 builder.Services.AddHttpClient<IFixturesService, FixturesService>();
 builder.Services.AddHttpClient<IResultsService, ResultsService>();
 builder.Services.AddHttpClient<ILeagueService, LeagueService>();
-builder.Services.AddHttpClient<IClubService, ClubService>();
+builder.Services.AddHttpClient<ISearchService, SearchService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddLogging();
 

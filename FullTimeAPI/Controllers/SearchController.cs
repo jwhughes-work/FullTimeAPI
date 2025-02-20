@@ -1,4 +1,4 @@
-﻿using FullTimeAPI.Services;
+﻿using FullTimeAPI.Services.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FullTimeAPI.Controllers
@@ -7,9 +7,9 @@ namespace FullTimeAPI.Controllers
     [ApiController]
     public class SearchController : ControllerBase
     {
-        private readonly IClubService _clubService;
+        private readonly ISearchService _clubService;
 
-        public SearchController(IClubService clubService)
+        public SearchController(ISearchService clubService)
         {
             _clubService = clubService;
         }

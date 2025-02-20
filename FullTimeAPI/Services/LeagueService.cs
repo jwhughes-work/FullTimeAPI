@@ -21,36 +21,36 @@ namespace FullTimeAPI.Services
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
-        public async Task<List<LeagueTable>> GetLeagueStandings(string leagueId)
+        public async Task<List<LeagueTable>> GetLeagueStandings(string divionId)
         {
-            if (string.IsNullOrWhiteSpace(leagueId))
-                throw new ArgumentException("League ID cannot be empty", nameof(leagueId));
+            if (string.IsNullOrWhiteSpace(divionId))
+                throw new ArgumentException("League ID cannot be empty", nameof(divionId));
 
-            string cacheKey = $"League-{leagueId}";
+            string cacheKey = $"League-{divionId}";
 
             if (_memoryCache.TryGetValue(cacheKey, out List<LeagueTable> cachedList) && cachedList?.Any() == true)
             {
-                _logger.LogInformation("Retrieved league {LeagueId}", leagueId);
+                _logger.LogInformation("Retrieved league {LeagueId}", divionId);
                 return cachedList;
             }
 
             try
             {
-                var leagueTable = await FetchAndParseLeague(leagueId);
+                var leagueTable = await FetchAndParseLeague(divionId);
 
                 _memoryCache.Set(cacheKey, leagueTable, DateTimeOffset.Now.Add(_cacheDuration));
                 return leagueTable;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching league {LeagueId}", leagueId);
+                _logger.LogError(ex, "Error fetching league {LeagueId}", divionId);
                 throw;
             }
         }
 
         private async Task<List<LeagueTable>> FetchAndParseLeague(string leagueId)
         {
-            var url = $"{BaseUrl}?league={leagueId}&itemsPerPage={MaxItemsPerPage}";
+            var url = $"{BaseUrl}?selectedDivision={leagueId}&itemsPerPage={MaxItemsPerPage}";
             var response = await _httpClient.GetAsync(url);
             response.EnsureSuccessStatusCode();
 

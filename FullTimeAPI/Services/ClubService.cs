@@ -102,5 +102,96 @@ namespace FullTimeAPI.Services
                 return null;
             }
         }
+
+        public async Task<List<TeamSearch>> FindTeamsByClub(string clubId)
+        {
+            if (string.IsNullOrEmpty(clubId))
+                throw new ArgumentException("club id cannot be empty", nameof(clubId));
+
+            string cacheKey = $"TeamSearch-{clubId}";
+
+            if (_memoryCache.TryGetValue(cacheKey, out List<TeamSearch> cachedList) && cachedList?.Any() == true)
+            {
+                _logger.LogInformation("Retrieved club search");
+                return cachedList;
+            }
+
+            try
+            {
+                var teams = await FetchAndParseTeamSearch(clubId);
+                _memoryCache.Set(cacheKey, teams, DateTimeOffset.Now.Add(_cacheDuration));
+                return teams;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching club search");
+                throw;
+            }
+        }
+        
+        private async Task<List<TeamSearch>> FetchAndParseTeamSearch(string clubId)
+        {
+            var url = $"https://fulltime.thefa.com/home/club/{clubId}.html";
+            var response = await _httpClient.GetAsync(url);
+            response.EnsureSuccessStatusCode();
+
+            var content = await response.Content.ReadAsStringAsync();
+            var document = new HtmlDocument();
+            document.LoadHtml(content);
+
+            var results = document.DocumentNode.SelectNodes("//a[contains(@href, '/DisplayTeam.do?teamID=')]");
+            if (results == null)
+            {
+                _logger.LogWarning("No teams found for club {clubId}", clubId);
+                return new List<TeamSearch>();
+            }
+
+            return results.Select(ParseTeamRow).Where(fixture => fixture != null).ToList();
+        }
+
+        private TeamSearch ParseTeamRow(HtmlNode item)
+        {
+            try
+            {
+                var href = item.GetAttributeValue("href", "");
+
+                var queryParams = href.Split('?').Last().Split('&')
+                    .Select(p => p.Split('='))
+                    .Where(p => p.Length == 2)
+                    .ToDictionary(p => p[0], p => p[1]);
+
+                if (!queryParams.TryGetValue("teamID", out var teamId) ||
+                    !queryParams.TryGetValue("league", out var leagueId))
+                {
+                    _logger.LogWarning("Team ID or League ID not found in href: {href}", href);
+                    return null;
+                }
+
+                if (string.IsNullOrEmpty(teamId) || string.IsNullOrEmpty(leagueId))
+                {
+                    _logger.LogWarning("Team ID or League ID not found in href: {href}", href);
+                    return null;
+                }
+                
+                var nameNode = item.SelectSingleNode(".//p[@class='bold nomargin']");
+                var teamName = nameNode?.InnerText.Trim() ?? "Unknown Team";
+
+               var divNode = item.SelectSingleNode(".//p[@class='smaller']/strong");
+                var leagueName = divNode?.InnerText.Trim() ?? "Unknown League";
+
+                return new TeamSearch
+                {
+                    Id = teamId,
+                    Name = teamName,
+                    LeagueId = leagueId,
+                    LeagueName = leagueName
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error parsing club row");
+                return null;
+            }
+        }
     }
 }

@@ -11,6 +11,7 @@
     {
         public string Name { get; set; }
         public string Id { get; set; }
-        public string Division { get; set; }
+        public string LeagueName { get; set; }
+        public string LeagueId { get; set; }
     }
 }

@@ -78,7 +78,7 @@ namespace FullTimeAPI.Controllers
         /// </summary>
         /// <param name="leagueName">League name to search for</param>
         /// <returns>List of matching leagues</returns>
-        /// /// <remarks>
+        /// <remarks>
         /// Sample League Name:
         ///
         /// Weston
@@ -102,5 +102,34 @@ namespace FullTimeAPI.Controllers
             }
         }
 
+
+        /// <summary>
+        /// Searches for divisions by entering id of a league.
+        /// </summary>
+        /// <param name="leagueId">League id</param>
+        /// <returns>List of matching divisions</returns>
+        /// <remarks>
+        /// Sample League Id:
+        ///
+        /// 8928175
+        ///
+        /// </remarks>
+        /// <response code="200">Returns the list of divisions</response>
+        /// <response code="500">If an error occurs</response>
+        [HttpGet("divisions/{leagueId}")]
+        [ProducesResponseType(200)]
+        [ProducesResponseType(500)]
+        public async Task<IActionResult> GetDivisionsByLeagueId(string leagueId)
+        {
+            try
+            {
+                var results = await _clubService.FindDivisonById(leagueId);
+                return Ok(results);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"An error occurred: {ex.Message}");
+            }
+        }
     }
 }

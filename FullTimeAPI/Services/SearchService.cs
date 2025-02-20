@@ -242,10 +242,12 @@ namespace FullTimeAPI.Services
                 return new List<LeagueSearch>();
             }
 
-            return results.Select(ParseLeaugeRow).Where(fixture => fixture != null).ToList();
+            var leagueTask = results.Select(ParseLeagueRow);
+            var leagues = await Task.WhenAll(leagueTask);
+            return leagues.Where(l => l != null).ToList();
         }
 
-        private LeagueSearch ParseLeaugeRow(HtmlNode item)
+        private async Task<LeagueSearch> ParseLeagueRow(HtmlNode item)
         {
             try
             {
@@ -269,11 +271,13 @@ namespace FullTimeAPI.Services
                     return null;
                 }
                 string leagueName = string.Join("", nameNode.ChildNodes.Select(node => node.InnerText)).Trim();
+                var divisions = await FetchAndParseDivisions(leagueId);
 
                 return new LeagueSearch
                 {
                     Id = leagueId,
-                    Name = leagueName
+                    Name = leagueName,
+                    Divisions = divisions
                 };
             }
             catch (Exception ex)
@@ -282,6 +286,79 @@ namespace FullTimeAPI.Services
                 return null;
             }
         }
+
+        public async Task<List<DivisionSearch>> FindDivisonById(string leagueId)
+        {
+            if (string.IsNullOrEmpty(leagueId))
+                throw new ArgumentException("league id cannot be empty", nameof(leagueId));
+
+            string cacheKey = $"DivisionSearch-{leagueId}";
+
+            if (_memoryCache.TryGetValue(cacheKey, out List<DivisionSearch> cachedList) && cachedList?.Any() == true)
+            {
+                _logger.LogInformation("Retrieved club search");
+                return cachedList;
+            }
+
+            try
+            {
+                var divisions = await FetchAndParseDivisions(leagueId);
+                _memoryCache.Set(cacheKey, divisions, DateTimeOffset.Now.Add(_cacheDuration));
+                return divisions;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching leagues search");
+                throw;
+            }
+        }
+
+        private async Task<List<DivisionSearch>> FetchAndParseDivisions(string leagueId)
+        {
+            var url = $"https://fulltime.thefa.com/index.html?league={leagueId}";
+            var response = await _httpClient.GetAsync(url);
+            response.EnsureSuccessStatusCode();
+
+            var content = await response.Content.ReadAsStringAsync();
+            var document = new HtmlDocument();
+            document.LoadHtml(content);
+            
+            var results = document.DocumentNode.SelectNodes("//select[@id='form1_selectedDivision']/option");
+            if (results == null)
+            {
+                _logger.LogWarning("No divisions found for league {leagueId}", leagueId);
+                return new List<DivisionSearch>();
+            }
+
+            return results.Select(ParseDivisionOption).Where(division => division != null).ToList();
+        }
+
+        private DivisionSearch ParseDivisionOption(HtmlNode optionNode)
+        {
+            try
+            {
+                var divisionId = optionNode.GetAttributeValue("value", "").Trim();
+                if (string.IsNullOrEmpty(divisionId))
+                {
+                    _logger.LogWarning("Division ID missing for an option.");
+                    return null;
+                }
+                
+                var divisionName = optionNode.InnerText.Trim();
+
+                return new DivisionSearch
+                {
+                    Id = divisionId,
+                    Name = divisionName
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error parsing division option");
+                return null;
+            }
+        }
+
         #endregion
     }
 }

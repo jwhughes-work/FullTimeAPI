@@ -21,22 +21,22 @@ namespace FullTimeAPI.Services
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
-        public async Task<List<Fixture>> GetFixturesByDivision(string divionId, string specificTeamName = "")
+        public async Task<List<Fixture>> GetFixturesByDivision(string divisionId, string specificTeamName = "")
         {
-            if (string.IsNullOrWhiteSpace(divionId))
-                throw new ArgumentException("divison ID cannot be empty", nameof(divionId));
+            if (string.IsNullOrWhiteSpace(divisionId))
+                throw new ArgumentException("divison ID cannot be empty", nameof(divisionId));
 
-            string cacheKey = $"Fixtures-{divionId}-{specificTeamName}";
+            string cacheKey = $"Fixtures-{divisionId}-{specificTeamName}";
 
             if (_memoryCache.TryGetValue(cacheKey, out List<Fixture> cachedList) && cachedList?.Any() == true)
             {
-                _logger.LogInformation("Retrieved fixtures from cache for divison {LeagueId}", divionId);
+                _logger.LogInformation("Retrieved fixtures from cache for divison {LeagueId}", divisionId);
                 return cachedList;
             }
 
             try
             {
-                var fixtures = await FetchAndParseFixtures(divionId);
+                var fixtures = await FetchAndParseFixtures(divisionId);
                 var filteredFixtures = FilterByTeam(fixtures, specificTeamName);
 
                 _memoryCache.Set(cacheKey, filteredFixtures, DateTimeOffset.Now.Add(_cacheDuration));
@@ -44,14 +44,14 @@ namespace FullTimeAPI.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching fixtures for divison {LeagueId}", divionId);
+                _logger.LogError(ex, "Error fetching fixtures for divison {LeagueId}", divisionId);
                 throw;
             }
         }
 
-        private async Task<List<Fixture>> FetchAndParseFixtures(string divison)
+        private async Task<List<Fixture>> FetchAndParseFixtures(string divisionId)
         {
-            var url = $"{BaseUrl}?league={divison}&itemsPerPage={MaxItemsPerPage}";
+            var url = $"{BaseUrl}?selectedDivision={divisionId}&itemsPerPage={MaxItemsPerPage}";
             var response = await _httpClient.GetAsync(url);
             response.EnsureSuccessStatusCode();
 
@@ -62,7 +62,7 @@ namespace FullTimeAPI.Services
             var results = document.DocumentNode.SelectNodes("//div[@class='fixtures-table table-scroll']/table/tbody/tr");
             if (results == null)
             {
-                _logger.LogWarning("No fixtures found for divison {divison}", divison);
+                _logger.LogWarning("No fixtures found for divison {divison}", divisionId);
                 return new List<Fixture>();
             }
 

@@ -50,6 +50,100 @@ namespace FullTimeAPI.Services
             }
         }
 
+        public async Task<List<FormResult>> GetTeamForm(string divisionId, string teamName)
+        {
+            if (string.IsNullOrWhiteSpace(divisionId))
+                throw new ArgumentException("Division ID cannot be empty", nameof(divisionId));
+            
+            if (string.IsNullOrWhiteSpace(teamName))
+                throw new ArgumentException("Team name cannot be empty", nameof(teamName));
+
+            string cacheKey = $"TeamForm-{divisionId}-{teamName}";
+
+            if (_memoryCache.TryGetValue(cacheKey, out List<FormResult> cachedForm) && cachedForm?.Any() == true)
+            {
+                _logger.LogInformation("Retrieved team form from cache for team {TeamName} in division {DivisionId}", teamName, divisionId);
+                return cachedForm;
+            }
+
+            try
+            {
+                // Get all results for the team
+                var matchResults = await GetResultsByLeague(divisionId, teamName);
+                
+                _logger.LogInformation("Found {ResultCount} total results for team {TeamName}", matchResults.Count, teamName);
+                
+                // Take last 5 results (most recent first) - will return fewer if less available
+                matchResults = matchResults.Take(5).ToList();
+                
+                _logger.LogInformation("Processing {ResultCount} results for form guide", matchResults.Count);
+                
+                var formResult = new List<FormResult>();
+                
+                foreach (var result in matchResults)
+                {
+                    var scoreString = result.Score.Split("-");
+                    var parsedHome = int.TryParse(scoreString[0].Trim(), out int homeScore);
+                    var parsedAway = int.TryParse(scoreString.Length > 1 ? scoreString[1].Trim() : "0", out int awayScore);
+
+                    if (parsedHome && parsedAway)
+                    {
+                        // Check if team is home or away
+                        if (result.HomeTeam.Contains(teamName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            // Team is playing at home
+                            if (homeScore > awayScore)
+                                formResult.Add(FormResult.W);
+                            else if (homeScore == awayScore)
+                                formResult.Add(FormResult.D);
+                            else
+                                formResult.Add(FormResult.L);
+                        }
+                        else if (result.AwayTeam.Contains(teamName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            // Team is playing away
+                            if (awayScore > homeScore)
+                                formResult.Add(FormResult.W);
+                            else if (homeScore == awayScore)
+                                formResult.Add(FormResult.D);
+                            else
+                                formResult.Add(FormResult.L);
+                        }
+                    }
+                    else
+                    {
+                        // Handle non-numeric scores (H, A, P)
+                        if (result.HomeTeam.Contains(teamName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (result.Score.StartsWith("H", StringComparison.OrdinalIgnoreCase))
+                                formResult.Add(FormResult.W);
+                            else if (result.Score.StartsWith("P", StringComparison.OrdinalIgnoreCase))
+                                formResult.Add(FormResult.P);
+                            else if (result.Score.StartsWith("A", StringComparison.OrdinalIgnoreCase))
+                                formResult.Add(FormResult.L);
+                        }
+                        else if (result.AwayTeam.Contains(teamName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (result.Score.StartsWith("A", StringComparison.OrdinalIgnoreCase))
+                                formResult.Add(FormResult.W);
+                            else if (result.Score.StartsWith("P", StringComparison.OrdinalIgnoreCase))
+                                formResult.Add(FormResult.P);
+                            else if (result.Score.StartsWith("H", StringComparison.OrdinalIgnoreCase))
+                                formResult.Add(FormResult.L);
+                        }
+                    }
+                }
+
+                _memoryCache.Set(cacheKey, formResult, DateTimeOffset.Now.Add(_cacheDuration));
+                return formResult;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching team form for team {TeamName} in division {DivisionId}", teamName, divisionId);
+                throw;
+            }
+        }
+
         private async Task<List<Result>> FetchAndParseResults(string divisionId)
         {
             var url = $"{BaseUrl}?selectedDivision={divisionId}&itemsPerPage={MaxItemsPerPage}";

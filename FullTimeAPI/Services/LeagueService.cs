@@ -49,6 +49,62 @@ namespace FullTimeAPI.Services
             }
         }
 
+        public async Task<List<LeagueTable>> GetTableSnapshot(string divisionId, string teamName)
+        {
+            if (string.IsNullOrWhiteSpace(divisionId))
+                throw new ArgumentException("Division ID cannot be empty", nameof(divisionId));
+
+            if (string.IsNullOrWhiteSpace(teamName))
+                throw new ArgumentException("Team name cannot be empty", nameof(teamName));
+
+            string cacheKey = $"TableSnap-{divisionId}-{teamName}";
+
+            if (_memoryCache.TryGetValue(cacheKey, out List<LeagueTable> cachedList) && cachedList?.Any() == true)
+            {
+                _logger.LogInformation("Retrieved table snapshot from cache for division {DivisionId} and team {TeamName}", divisionId, teamName);
+                return cachedList;
+            }
+
+            try
+            {
+                var fullTable = await GetLeagueStandings(divisionId);
+                int teamIndex = fullTable.FindIndex(t => t.TeamName.Contains(teamName, StringComparison.OrdinalIgnoreCase));
+
+                if (teamIndex == -1)
+                {
+                    _logger.LogWarning("Team {TeamName} not found in division {DivisionId}", teamName, divisionId);
+                    return new List<LeagueTable>();
+                }
+
+                var selectedIndices = new List<int>();
+
+                if (teamIndex == 0)
+                {
+                    selectedIndices = new List<int> { 0, 1, 2 };
+                }
+                else if (teamIndex == (fullTable.Count - 1))
+                {
+                    selectedIndices = new List<int> { fullTable.Count - 1, fullTable.Count - 2, fullTable.Count - 3 };
+                }
+                else
+                {
+                    selectedIndices = new List<int> { teamIndex - 1, teamIndex, teamIndex + 1 };
+                }
+
+                var selectedItems = fullTable
+                    .Where((item, index) => selectedIndices.Contains(index))
+                    .ToList();
+
+                _memoryCache.Set(cacheKey, selectedItems, DateTimeOffset.Now.Add(_cacheDuration));
+                return selectedItems;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching table snapshot for division {DivisionId} and team {TeamName}", divisionId, teamName);
+                throw;
+            }
+        }
+
         private async Task<List<LeagueTable>> FetchAndParseDivision(string divisonId)
         {
             var url = $"{BaseUrl}?selectedDivision={divisonId}&itemsPerPage={MaxItemsPerPage}";

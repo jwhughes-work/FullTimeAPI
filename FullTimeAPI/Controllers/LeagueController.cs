@@ -35,5 +35,27 @@ namespace FullTimeAPI.Controllers
                 return StatusCode(500, $"An error occurred: {ex.Message}");
             }
         }
+
+        /// <summary>
+        /// Retrieves a table snapshot showing the specified team and the teams above and below it
+        /// </summary>
+        /// <param name="divisionId">The ID of the division to retrieve the table snapshot for.</param>
+        /// <param name="teamName">The name of the team to center the snapshot around.</param>
+        /// <returns>A list of 3 teams (team above, the specified team, team below) from the league table</returns>
+        /// <response code="200">Returns the table snapshot</response>
+        /// <response code="500">If an error occurs</response>
+        [HttpGet("{divisionId}/snapshot")]
+        public async Task<IActionResult> GetTableSnapshot(string divisionId, [FromQuery] string teamName)
+        {
+            try
+            {
+                var results = await _leagueService.GetTableSnapshot(divisionId, teamName);
+                return Ok(results);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"An error occurred: {ex.Message}");
+            }
+        }
     }
 }

@@ -15,9 +15,9 @@ namespace FullTimeAPI.Services
         private const string BaseUrl = "https://fulltime.thefa.com/table.html";
         private const int MaxItemsPerPage = 10000;
 
-        public LeagueService(HttpClient httpClient, IMemoryCache memoryCache, ILogger<LeagueService> logger)
+        public LeagueService(IHttpClientFactory httpClientFactory, IMemoryCache memoryCache, ILogger<LeagueService> logger)
         {
-            _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+            _httpClient = httpClientFactory?.CreateClient("resilient") ?? throw new ArgumentNullException(nameof(httpClientFactory));
             _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }

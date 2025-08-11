@@ -15,9 +15,9 @@ namespace FullTimeAPI.Services
         private const string BaseUrl = "https://fulltime.thefa.com/fixtures.html";
         private const int MaxItemsPerPage = 10000;
 
-        public FixturesService(HttpClient httpClient, IMemoryCache memoryCache, ILogger<FixturesService> logger)
+        public FixturesService(IHttpClientFactory httpClientFactory, IMemoryCache memoryCache, ILogger<FixturesService> logger)
         {
-            _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+            _httpClient = httpClientFactory?.CreateClient("resilient") ?? throw new ArgumentNullException(nameof(httpClientFactory));
             _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
@@ -25,13 +25,13 @@ namespace FullTimeAPI.Services
         public async Task<List<Fixture>> GetFixturesByDivision(string divisionId, string specificTeamName = "")
         {
             if (string.IsNullOrWhiteSpace(divisionId))
-                throw new ArgumentException("divison ID cannot be empty", nameof(divisionId));
+                throw new ArgumentException("division ID cannot be empty", nameof(divisionId));
 
             string cacheKey = $"Fixtures-{divisionId}-{specificTeamName}";
 
             if (_memoryCache.TryGetValue(cacheKey, out List<Fixture> cachedList) && cachedList?.Any() == true)
             {
-                _logger.LogInformation("Retrieved fixtures from cache for divison {LeagueId}", divisionId);
+                _logger.LogInformation("Retrieved fixtures from cache for division {LeagueId}", divisionId);
                 return cachedList;
             }
 
@@ -45,7 +45,7 @@ namespace FullTimeAPI.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching fixtures for divison {LeagueId}", divisionId);
+                _logger.LogError(ex, "Error fetching fixtures for division {LeagueId}", divisionId);
                 throw;
             }
         }

@@ -10,12 +10,12 @@ namespace FullTimeAPI.Services
     {
         private readonly HttpClient _httpClient;
         private readonly IMemoryCache _memoryCache;
-        private readonly ILogger<FixturesService> _logger;
+        private readonly ILogger<SearchService> _logger;
         private readonly TimeSpan _cacheDuration = TimeSpan.FromMinutes(30);
         
-        public SearchService(HttpClient httpClient, IMemoryCache memoryCache, ILogger<FixturesService> logger)
+        public SearchService(IHttpClientFactory httpClientFactory, IMemoryCache memoryCache, ILogger<SearchService> logger)
         {
-            _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+            _httpClient = httpClientFactory?.CreateClient("resilient") ?? throw new ArgumentNullException(nameof(httpClientFactory));
             _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }

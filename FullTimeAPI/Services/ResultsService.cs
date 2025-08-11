@@ -15,9 +15,9 @@ namespace FullTimeAPI.Services
         private const string BaseUrl = "https://fulltime.thefa.com/results.html";
         private const int MaxItemsPerPage = 10000;
 
-        public ResultsService(HttpClient httpClient, IMemoryCache memoryCache, ILogger<ResultsService> logger)
+        public ResultsService(IHttpClientFactory httpClientFactory, IMemoryCache memoryCache, ILogger<ResultsService> logger)
         {
-            _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+            _httpClient = httpClientFactory?.CreateClient("resilient") ?? throw new ArgumentNullException(nameof(httpClientFactory));
             _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }

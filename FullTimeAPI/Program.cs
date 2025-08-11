@@ -1,6 +1,9 @@
 using FullTimeAPI.Services;
 using FullTimeAPI.Services.Interfaces;
+using FullTimeAPI.Middleware;
+using FullTimeAPI.Extensions;
 using Microsoft.OpenApi.Models;
+using AspNetCoreRateLimit;
 using System.Reflection;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -22,14 +25,33 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
-builder.Services.AddHttpClient<IFixturesService, FixturesService>();
-builder.Services.AddHttpClient<IResultsService, ResultsService>();
-builder.Services.AddHttpClient<ILeagueService, LeagueService>();
-builder.Services.AddHttpClient<ISearchService, SearchService>();
+// Rate limiting configuration
+builder.Services.AddOptions();
 builder.Services.AddMemoryCache();
+builder.Services.Configure<IpRateLimitOptions>(builder.Configuration.GetSection("IpRateLimiting"));
+builder.Services.Configure<IpRateLimitPolicies>(builder.Configuration.GetSection("IpRateLimitPolicies"));
+builder.Services.AddInMemoryRateLimiting();
+builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>();
+
+// Add resilient HTTP clients
+builder.Services.AddResilientHttpClients();
+
+// Register services with named HTTP client
+builder.Services.AddScoped<IFixturesService, FixturesService>();
+builder.Services.AddScoped<IResultsService, ResultsService>();
+builder.Services.AddScoped<ILeagueService, LeagueService>();
+builder.Services.AddScoped<ISearchService, SearchService>();
+builder.Services.AddScoped<IPlayerService, PlayerService>();
+
 builder.Services.AddLogging();
 
 var app = builder.Build();
+
+// Global exception handler
+app.UseMiddleware<GlobalExceptionHandlerMiddleware>();
+
+// Rate limiting
+app.UseIpRateLimiting();
 
 app.UseSwagger();
 app.UseSwaggerUI();

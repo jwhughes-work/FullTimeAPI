@@ -2,7 +2,7 @@
 {
     public class Player
     {
-        public string Forename { get; set; }
+        public string Name { get; set; }
         public string FaId { get; set; }
         public int Appearances { get; set; }
         public int Goals { get; set; }

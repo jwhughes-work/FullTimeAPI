@@ -30,6 +30,15 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
+// CORS - allow any origin (public read-only API)
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+        policy.AllowAnyOrigin()
+              .AllowAnyHeader()
+              .AllowAnyMethod());
+});
+
 // Rate limiting configuration
 builder.Services.AddOptions();
 builder.Services.AddMemoryCache();
@@ -62,6 +71,8 @@ app.UseSwagger();
 app.UseSwaggerUI();
 
 app.UseHttpsRedirection();
+
+app.UseCors();
 
 app.UseAuthorization();
 

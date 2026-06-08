@@ -8,11 +8,11 @@ namespace FullTimeAPI.Controllers
     [ApiController]
     public class SearchController : ControllerBase
     {
-        private readonly ISearchService _clubService;
+        private readonly ISearchService _searchService;
 
-        public SearchController(ISearchService clubService)
+        public SearchController(ISearchService searchService)
         {
-            _clubService = clubService;
+            _searchService = searchService;
         }
 
         /// <summary>
@@ -33,15 +33,8 @@ namespace FullTimeAPI.Controllers
         [ProducesResponseType(500)]
         public async Task<IActionResult> GetClubsByName(string clubName)
         {
-            try
-            {
-                var results = await _clubService.FindClubs(clubName);
-                return Ok(results);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"An error occurred: {ex.Message}");
-            }
+            var results = await _searchService.FindClubs(clubName);
+            return Ok(results);
         }
 
         /// <summary>
@@ -62,15 +55,8 @@ namespace FullTimeAPI.Controllers
         [ProducesResponseType(500)]
         public async Task<IActionResult> GetTeamsByClubId(string clubId)
         {
-            try
-            {
-                var results = await _clubService.FindTeamsByClub(clubId);
-                return Ok(results);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"An error occurred: {ex.Message}");
-            }
+            var results = await _searchService.FindTeamsByClub(clubId);
+            return Ok(results);
         }
 
         /// <summary>
@@ -91,15 +77,8 @@ namespace FullTimeAPI.Controllers
         [ProducesResponseType(500)]
         public async Task<IActionResult> GetLeaguesByName(string leagueName)
         {
-            try
-            {
-                var results = await _clubService.FindLeagues(leagueName);
-                return Ok(results);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"An error occurred: {ex.Message}");
-            }
+            var results = await _searchService.FindLeagues(leagueName);
+            return Ok(results);
         }
 
 
@@ -121,15 +100,8 @@ namespace FullTimeAPI.Controllers
         [ProducesResponseType(500)]
         public async Task<IActionResult> GetDivisionsByLeagueId(string leagueId)
         {
-            try
-            {
-                var results = await _clubService.FindDivisonById(leagueId);
-                return Ok(results);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"An error occurred: {ex.Message}");
-            }
+            var results = await _searchService.FindDivisonById(leagueId);
+            return Ok(results);
         }
     }
 }

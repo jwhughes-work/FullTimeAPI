@@ -31,6 +31,15 @@ namespace FullTimeAPI.Middleware
             _logger.LogError(exception, "An unhandled exception occurred: {Message}", exception.Message);
 
             var response = context.Response;
+
+            // If the response has already begun streaming to the client we can't safely
+            // rewrite the status code or body - rethrow and let the host abort the connection.
+            if (response.HasStarted)
+            {
+                _logger.LogWarning("Response has already started, cannot write error response.");
+                throw exception;
+            }
+
             response.ContentType = "application/json";
 
             var errorResponse = new

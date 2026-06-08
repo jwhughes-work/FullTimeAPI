@@ -1,4 +1,3 @@
-using FullTimeAPI.Framework;
 using FullTimeAPI.Models;
 using FullTimeAPI.Services.Interfaces;
 using HtmlAgilityPack;
@@ -49,7 +48,7 @@ namespace FullTimeAPI.Services
 
         private async Task<Player> FetchAndParsePlayerStats(string faPlayerId)
         {
-            var url = $"{BaseUrl}?personID={faPlayerId}";
+            var url = $"{BaseUrl}?personID={Uri.EscapeDataString(faPlayerId)}";
             var response = await _httpClient.GetAsync(url);
             response.EnsureSuccessStatusCode();
 

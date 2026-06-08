@@ -1,5 +1,4 @@
-﻿using FullTimeAPI.Framework;
-using FullTimeAPI.Models;
+﻿using FullTimeAPI.Models;
 using FullTimeAPI.Services.Interfaces;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Caching.Memory;
@@ -39,7 +38,9 @@ namespace FullTimeAPI.Services
             {
                 var leagueTable = await FetchAndParseDivision(divionId);
 
-                _memoryCache.Set(cacheKey, leagueTable, DateTimeOffset.Now.Add(_cacheDuration));
+                if (leagueTable.Any())
+                    _memoryCache.Set(cacheKey, leagueTable, DateTimeOffset.Now.Add(_cacheDuration));
+
                 return leagueTable;
             }
             catch (Exception ex)
@@ -95,7 +96,9 @@ namespace FullTimeAPI.Services
                     .Where((item, index) => selectedIndices.Contains(index))
                     .ToList();
 
-                _memoryCache.Set(cacheKey, selectedItems, DateTimeOffset.Now.Add(_cacheDuration));
+                if (selectedItems.Any())
+                    _memoryCache.Set(cacheKey, selectedItems, DateTimeOffset.Now.Add(_cacheDuration));
+
                 return selectedItems;
             }
             catch (Exception ex)
@@ -107,7 +110,7 @@ namespace FullTimeAPI.Services
 
         private async Task<List<LeagueTable>> FetchAndParseDivision(string divisonId)
         {
-            var url = $"{BaseUrl}?selectedDivision={divisonId}&itemsPerPage={MaxItemsPerPage}";
+            var url = $"{BaseUrl}?selectedDivision={Uri.EscapeDataString(divisonId)}&itemsPerPage={MaxItemsPerPage}";
             var response = await _httpClient.GetAsync(url);
             response.EnsureSuccessStatusCode();
 

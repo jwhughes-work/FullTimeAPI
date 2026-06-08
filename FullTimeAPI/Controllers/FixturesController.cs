@@ -26,15 +26,8 @@ namespace FullTimeAPI.Controllers
         [HttpGet("{divisionId}")]
         public async Task<IActionResult> GetFixtures(string divisionId, [FromQuery] string teamName = "")
         {
-            try
-            {
-                var fixtures = await _fixturesService.GetFixturesByDivision(divisionId, teamName);
-                return Ok(fixtures);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"An error occurred: {ex.Message}");
-            }
+            var fixtures = await _fixturesService.GetFixturesByDivision(divisionId, teamName);
+            return Ok(fixtures);
         }
     }
 }

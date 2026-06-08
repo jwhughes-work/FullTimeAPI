@@ -25,15 +25,8 @@ namespace FullTimeAPI.Controllers
         [HttpGet("{divisionId}")]
         public async Task<IActionResult> GetLeague(string divisionId)
         {
-            try
-            {
-                var results = await _leagueService.GetLeagueStandings(divisionId);
-                return Ok(results);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"An error occurred: {ex.Message}");
-            }
+            var results = await _leagueService.GetLeagueStandings(divisionId);
+            return Ok(results);
         }
 
         /// <summary>
@@ -47,15 +40,8 @@ namespace FullTimeAPI.Controllers
         [HttpGet("{divisionId}/snapshot")]
         public async Task<IActionResult> GetTableSnapshot(string divisionId, [FromQuery] string teamName)
         {
-            try
-            {
-                var results = await _leagueService.GetTableSnapshot(divisionId, teamName);
-                return Ok(results);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"An error occurred: {ex.Message}");
-            }
+            var results = await _leagueService.GetTableSnapshot(divisionId, teamName);
+            return Ok(results);
         }
     }
 }

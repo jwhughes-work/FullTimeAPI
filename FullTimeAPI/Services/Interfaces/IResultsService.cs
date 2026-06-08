@@ -1,5 +1,4 @@
-﻿using FullTimeAPI.Framework;
-using FullTimeAPI.Models;
+﻿using FullTimeAPI.Models;
 
 namespace FullTimeAPI.Services.Interfaces
 {

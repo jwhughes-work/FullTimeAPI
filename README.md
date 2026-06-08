@@ -19,7 +19,7 @@ FullTime API is an open source RESTful API that retrieves football data from [Fu
 
 ### Prerequisites
 
-- .NET 8 or later (download from https://dotnet.microsoft.com/download/dotnet/8.0)
+- .NET 9 or later (download from https://dotnet.microsoft.com/download/dotnet/9.0)
 - An internet connection (to fetch data from [FullTime](https://fulltime.thefa.com/))
 - IDE
 

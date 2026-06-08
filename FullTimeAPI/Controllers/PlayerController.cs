@@ -25,19 +25,8 @@ namespace FullTimeAPI.Controllers
         [HttpGet("{faPlayerId}")]
         public async Task<IActionResult> GetPlayerStats(string faPlayerId)
         {
-            try
-            {
-                var player = await _playerService.GetPlayerStats(faPlayerId);
-                return Ok(player);
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(new { error = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { error = "An error occurred while retrieving player statistics." });
-            }
+            var player = await _playerService.GetPlayerStats(faPlayerId);
+            return Ok(player);
         }
     }
 }

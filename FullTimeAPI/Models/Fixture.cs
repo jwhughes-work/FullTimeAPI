@@ -1,4 +1,4 @@
-﻿namespace FullTimeAPI.Framework
+﻿namespace FullTimeAPI.Models
 {
     public class Fixture
     {

@@ -1,5 +1,4 @@
-﻿using FullTimeAPI.Framework;
-using FullTimeAPI.Models;
+﻿using FullTimeAPI.Models;
 using FullTimeAPI.Services.Interfaces;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Caching.Memory;
@@ -40,7 +39,9 @@ namespace FullTimeAPI.Services
                 var fixtures = await FetchAndParseFixtures(divisionId);
                 var filteredFixtures = FilterByTeam(fixtures, specificTeamName);
 
-                _memoryCache.Set(cacheKey, filteredFixtures, DateTimeOffset.Now.Add(_cacheDuration));
+                if (filteredFixtures.Any())
+                    _memoryCache.Set(cacheKey, filteredFixtures, DateTimeOffset.Now.Add(_cacheDuration));
+
                 return filteredFixtures;
             }
             catch (Exception ex)
@@ -52,7 +53,7 @@ namespace FullTimeAPI.Services
 
         private async Task<List<Fixture>> FetchAndParseFixtures(string divisionId)
         {
-            var url = $"{BaseUrl}?selectedDivision={divisionId}&itemsPerPage={MaxItemsPerPage}";
+            var url = $"{BaseUrl}?selectedDivision={Uri.EscapeDataString(divisionId)}&itemsPerPage={MaxItemsPerPage}";
             var response = await _httpClient.GetAsync(url);
             response.EnsureSuccessStatusCode();
 

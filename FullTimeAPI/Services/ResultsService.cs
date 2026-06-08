@@ -1,5 +1,4 @@
-﻿using FullTimeAPI.Framework;
-using FullTimeAPI.Models;
+﻿using FullTimeAPI.Models;
 using FullTimeAPI.Services.Interfaces;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Caching.Memory;
@@ -40,12 +39,14 @@ namespace FullTimeAPI.Services
                 var results = await FetchAndParseResults(divisionId);
                 var filteredFixtures = FilterByTeam(results, specificTeamName);
 
-                _memoryCache.Set(cacheKey, filteredFixtures, DateTimeOffset.Now.Add(_cacheDuration));
+                if (filteredFixtures.Any())
+                    _memoryCache.Set(cacheKey, filteredFixtures, DateTimeOffset.Now.Add(_cacheDuration));
+
                 return filteredFixtures;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching fixtures for league {divisionId}", divisionId);
+                _logger.LogError(ex, "Error fetching results for league {divisionId}", divisionId);
                 throw;
             }
         }
@@ -134,7 +135,9 @@ namespace FullTimeAPI.Services
                     }
                 }
 
-                _memoryCache.Set(cacheKey, formResult, DateTimeOffset.Now.Add(_cacheDuration));
+                if (formResult.Any())
+                    _memoryCache.Set(cacheKey, formResult, DateTimeOffset.Now.Add(_cacheDuration));
+
                 return formResult;
             }
             catch (Exception ex)
@@ -146,7 +149,7 @@ namespace FullTimeAPI.Services
 
         private async Task<List<Result>> FetchAndParseResults(string divisionId)
         {
-            var url = $"{BaseUrl}?selectedDivision={divisionId}&itemsPerPage={MaxItemsPerPage}";
+            var url = $"{BaseUrl}?selectedDivision={Uri.EscapeDataString(divisionId)}&itemsPerPage={MaxItemsPerPage}";
             var response = await _httpClient.GetAsync(url);
             response.EnsureSuccessStatusCode();
 

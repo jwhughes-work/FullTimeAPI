@@ -25,15 +25,8 @@ namespace FullTimeAPI.Controllers
         [HttpGet("{divisionId}")]
         public async Task<IActionResult> GetResults(string divisionId, [FromQuery] string teamName = "")
         {
-            try
-            {
-                var results = await _resultsService.GetResultsByLeague(divisionId, teamName);
-                return Ok(results);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"An error occurred: {ex.Message}");
-            }
+            var results = await _resultsService.GetResultsByLeague(divisionId, teamName);
+            return Ok(results);
         }
 
         /// <summary>
@@ -48,19 +41,8 @@ namespace FullTimeAPI.Controllers
         [HttpGet("{divisionId}/form")]
         public async Task<IActionResult> GetTeamForm(string divisionId, [FromQuery] string teamName)
         {
-            try
-            {
-                var form = await _resultsService.GetTeamForm(divisionId, teamName);
-                return Ok(form);
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(new { error = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { error = "An error occurred while retrieving team form." });
-            }
+            var form = await _resultsService.GetTeamForm(divisionId, teamName);
+            return Ok(form);
         }
     }
 }

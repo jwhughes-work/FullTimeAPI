@@ -1,5 +1,4 @@
-﻿using FullTimeAPI.Framework;
-using FullTimeAPI.Models;
+﻿using FullTimeAPI.Models;
 using FullTimeAPI.Services.Interfaces;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Caching.Memory;
@@ -37,7 +36,9 @@ namespace FullTimeAPI.Services
             try
             {
                 var clubs = await FetchAndParseClubSearch(searchName);
-                _memoryCache.Set(cacheKey, clubs, DateTimeOffset.Now.Add(_cacheDuration));
+                if (clubs.Any())
+                    _memoryCache.Set(cacheKey, clubs, DateTimeOffset.Now.Add(_cacheDuration));
+
                 return clubs;
             }
             catch (Exception ex)
@@ -49,7 +50,7 @@ namespace FullTimeAPI.Services
 
         private async Task<List<ClubSearch>> FetchAndParseClubSearch(string team)
         {
-            var url = $"https://fulltime.thefa.com/home/search.html?partLeagueOrClubNameSearchFilter={team}&clubSearchFilter=true";
+            var url = $"https://fulltime.thefa.com/home/search.html?partLeagueOrClubNameSearchFilter={Uri.EscapeDataString(team)}&clubSearchFilter=true";
             var response = await _httpClient.GetAsync(url);
             response.EnsureSuccessStatusCode();
 
@@ -122,7 +123,9 @@ namespace FullTimeAPI.Services
             try
             {
                 var teams = await FetchAndParseTeamSearch(clubId);
-                _memoryCache.Set(cacheKey, teams, DateTimeOffset.Now.Add(_cacheDuration));
+                if (teams.Any())
+                    _memoryCache.Set(cacheKey, teams, DateTimeOffset.Now.Add(_cacheDuration));
+
                 return teams;
             }
             catch (Exception ex)
@@ -134,7 +137,7 @@ namespace FullTimeAPI.Services
         
         private async Task<List<TeamSearch>> FetchAndParseTeamSearch(string clubId)
         {
-            var url = $"https://fulltime.thefa.com/home/club/{clubId}.html";
+            var url = $"https://fulltime.thefa.com/home/club/{Uri.EscapeDataString(clubId)}.html";
             var response = await _httpClient.GetAsync(url);
             response.EnsureSuccessStatusCode();
 
@@ -215,7 +218,9 @@ namespace FullTimeAPI.Services
             try
             {
                 var leagues = await FetchAndParseLeagueSearch(searchName);
-                _memoryCache.Set(cacheKey, leagues, DateTimeOffset.Now.Add(_cacheDuration));
+                if (leagues.Any())
+                    _memoryCache.Set(cacheKey, leagues, DateTimeOffset.Now.Add(_cacheDuration));
+
                 return leagues;
             }
             catch (Exception ex)
@@ -227,7 +232,7 @@ namespace FullTimeAPI.Services
 
         private async Task<List<LeagueSearch>> FetchAndParseLeagueSearch(string team)
         {
-            var url = $"https://fulltime.thefa.com/home/search.html?partLeagueOrClubNameSearchFilter={team}&clubSearchFilter=false";
+            var url = $"https://fulltime.thefa.com/home/search.html?partLeagueOrClubNameSearchFilter={Uri.EscapeDataString(team)}&clubSearchFilter=false";
             var response = await _httpClient.GetAsync(url);
             response.EnsureSuccessStatusCode();
 
@@ -267,7 +272,7 @@ namespace FullTimeAPI.Services
                 var nameNode = item;
                 if (nameNode == null)
                 {
-                    _logger.LogWarning("League name not found for league ID: {leagueId}");
+                    _logger.LogWarning("League name not found for league ID: {leagueId}", leagueId);
                     return null;
                 }
                 string leagueName = string.Join("", nameNode.ChildNodes.Select(node => node.InnerText)).Trim();
@@ -303,7 +308,9 @@ namespace FullTimeAPI.Services
             try
             {
                 var divisions = await FetchAndParseDivisions(leagueId);
-                _memoryCache.Set(cacheKey, divisions, DateTimeOffset.Now.Add(_cacheDuration));
+                if (divisions.Any())
+                    _memoryCache.Set(cacheKey, divisions, DateTimeOffset.Now.Add(_cacheDuration));
+
                 return divisions;
             }
             catch (Exception ex)
@@ -315,7 +322,7 @@ namespace FullTimeAPI.Services
 
         private async Task<List<DivisionSearch>> FetchAndParseDivisions(string leagueId)
         {
-            var url = $"https://fulltime.thefa.com/index.html?league={leagueId}";
+            var url = $"https://fulltime.thefa.com/index.html?league={Uri.EscapeDataString(leagueId)}";
             var response = await _httpClient.GetAsync(url);
             response.EnsureSuccessStatusCode();
 

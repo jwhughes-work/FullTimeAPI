@@ -21,27 +21,27 @@ namespace FullTimeAPI.Services
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
-        public async Task<List<LeagueTable>> GetLeagueStandings(string divionId)
+        public async Task<LeagueStandings> GetLeagueStandings(string divionId)
         {
             if (string.IsNullOrWhiteSpace(divionId))
                 throw new ArgumentException("League ID cannot be empty", nameof(divionId));
 
             string cacheKey = $"League-{divionId}";
 
-            if (_memoryCache.TryGetValue(cacheKey, out List<LeagueTable> cachedList) && cachedList?.Any() == true)
+            if (_memoryCache.TryGetValue(cacheKey, out LeagueStandings cachedStandings) && cachedStandings?.Table?.Any() == true)
             {
                 _logger.LogInformation("Retrieved league {LeagueId}", divionId);
-                return cachedList;
+                return cachedStandings;
             }
 
             try
             {
-                var leagueTable = await FetchAndParseDivision(divionId);
+                var standings = await FetchAndParseDivision(divionId);
 
-                if (leagueTable.Any())
-                    _memoryCache.Set(cacheKey, leagueTable, DateTimeOffset.Now.Add(_cacheDuration));
+                if (standings.Table.Any())
+                    _memoryCache.Set(cacheKey, standings, DateTimeOffset.Now.Add(_cacheDuration));
 
-                return leagueTable;
+                return standings;
             }
             catch (Exception ex)
             {
@@ -50,7 +50,7 @@ namespace FullTimeAPI.Services
             }
         }
 
-        public async Task<List<LeagueTable>> GetTableSnapshot(string divisionId, string teamName)
+        public async Task<LeagueStandings> GetTableSnapshot(string divisionId, string teamName)
         {
             if (string.IsNullOrWhiteSpace(divisionId))
                 throw new ArgumentException("Division ID cannot be empty", nameof(divisionId));
@@ -60,21 +60,21 @@ namespace FullTimeAPI.Services
 
             string cacheKey = $"TableSnap-{divisionId}-{teamName}";
 
-            if (_memoryCache.TryGetValue(cacheKey, out List<LeagueTable> cachedList) && cachedList?.Any() == true)
+            if (_memoryCache.TryGetValue(cacheKey, out LeagueStandings cachedSnapshot) && cachedSnapshot?.Table?.Any() == true)
             {
                 _logger.LogInformation("Retrieved table snapshot from cache for division {DivisionId} and team {TeamName}", divisionId, teamName);
-                return cachedList;
+                return cachedSnapshot;
             }
 
             try
             {
                 var fullTable = await GetLeagueStandings(divisionId);
-                int teamIndex = fullTable.FindIndex(t => t.TeamName.Contains(teamName, StringComparison.OrdinalIgnoreCase));
+                int teamIndex = fullTable.Table.FindIndex(t => t.TeamName.Contains(teamName, StringComparison.OrdinalIgnoreCase));
 
                 if (teamIndex == -1)
                 {
                     _logger.LogWarning("Team {TeamName} not found in division {DivisionId}", teamName, divisionId);
-                    return new List<LeagueTable>();
+                    return new LeagueStandings { DivisionName = fullTable.DivisionName };
                 }
 
                 var selectedIndices = new List<int>();
@@ -83,23 +83,29 @@ namespace FullTimeAPI.Services
                 {
                     selectedIndices = new List<int> { 0, 1, 2 };
                 }
-                else if (teamIndex == (fullTable.Count - 1))
+                else if (teamIndex == (fullTable.Table.Count - 1))
                 {
-                    selectedIndices = new List<int> { fullTable.Count - 1, fullTable.Count - 2, fullTable.Count - 3 };
+                    selectedIndices = new List<int> { fullTable.Table.Count - 1, fullTable.Table.Count - 2, fullTable.Table.Count - 3 };
                 }
                 else
                 {
                     selectedIndices = new List<int> { teamIndex - 1, teamIndex, teamIndex + 1 };
                 }
 
-                var selectedItems = fullTable
+                var selectedItems = fullTable.Table
                     .Where((item, index) => selectedIndices.Contains(index))
                     .ToList();
 
-                if (selectedItems.Any())
-                    _memoryCache.Set(cacheKey, selectedItems, DateTimeOffset.Now.Add(_cacheDuration));
+                var snapshot = new LeagueStandings
+                {
+                    DivisionName = fullTable.DivisionName,
+                    Table = selectedItems
+                };
 
-                return selectedItems;
+                if (selectedItems.Any())
+                    _memoryCache.Set(cacheKey, snapshot, DateTimeOffset.Now.Add(_cacheDuration));
+
+                return snapshot;
             }
             catch (Exception ex)
             {
@@ -108,7 +114,7 @@ namespace FullTimeAPI.Services
             }
         }
 
-        private async Task<List<LeagueTable>> FetchAndParseDivision(string divisonId)
+        private async Task<LeagueStandings> FetchAndParseDivision(string divisonId)
         {
             var url = $"{BaseUrl}?selectedDivision={Uri.EscapeDataString(divisonId)}&itemsPerPage={MaxItemsPerPage}";
             var response = await _httpClient.GetAsync(url);
@@ -122,17 +128,23 @@ namespace FullTimeAPI.Services
             if (resultsNode == null)
             {
                 _logger.LogWarning("No league table found");
-                return new List<LeagueTable>();
+                return new LeagueStandings();
             }
+
+            var divisionName = Helpers.NormalizeText(resultsNode.SelectSingleNode("div/div[1]/div[1]/h2")?.InnerText ?? string.Empty);
 
             var resultNodes = resultsNode.SelectNodes("//div[@class='table-scroll']/table/tbody/tr");
             if (resultNodes == null)
             {
                 _logger.LogWarning("No result nodes found for division");
-                return new List<LeagueTable>();
+                return new LeagueStandings { DivisionName = divisionName };
             }
 
-            return resultNodes.Select(ParseLeagueRow).Where(result => result != null).ToList();
+            return new LeagueStandings
+            {
+                DivisionName = divisionName,
+                Table = resultNodes.Select(ParseLeagueRow).Where(result => result != null).ToList()
+            };
         }
 
         private LeagueTable ParseLeagueRow(HtmlNode item)

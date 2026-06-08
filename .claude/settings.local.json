@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(dotnet build *)"
+      "Bash(dotnet build *)",
+      "Bash(command -v dotnet)",
+      "Read(//home/jwhughes98/.dotnet/**)",
+      "Bash(\"/mnt/c/Program Files/dotnet/dotnet.exe\" build FullTimeAPI/FullTimeAPI.csproj -clp:ErrorsOnly)"
     ]
   }
 }

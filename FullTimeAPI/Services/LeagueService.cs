@@ -118,7 +118,7 @@ namespace FullTimeAPI.Services
         {
             var url = $"{BaseUrl}?selectedDivision={Uri.EscapeDataString(divisonId)}&itemsPerPage={MaxItemsPerPage}";
             var response = await _httpClient.GetAsync(url);
-            response.EnsureSuccessStatusCode();
+            await EnsureSuccessOrLog(response, $"league table (division {divisonId})");
 
             var content = await response.Content.ReadAsStringAsync();
             var document = new HtmlDocument();
@@ -145,6 +145,27 @@ namespace FullTimeAPI.Services
                 DivisionName = divisionName,
                 Table = resultNodes.Select(ParseLeagueRow).Where(result => result != null).ToList()
             };
+        }
+
+        // After the retry policy has given up, a non-success response (3xx redirect, 403, 5xx)
+        // would otherwise throw a bare HttpRequestException that the middleware turns into an
+        // opaque 503. Log what FullTime actually returned first - status, final URL, redirect
+        // Location and a body snippet - so the failure is diagnosable, then throw as before.
+        private async Task EnsureSuccessOrLog(HttpResponseMessage response, string context)
+        {
+            if (response.IsSuccessStatusCode)
+                return;
+
+            string body = string.Empty;
+            try { body = await response.Content.ReadAsStringAsync(); } catch { /* body may be unreadable */ }
+            var snippet = body.Length > 500 ? body.Substring(0, 500) : body;
+
+            _logger.LogWarning(
+                "Upstream non-success for {Context}. status={Status} finalUrl={FinalUrl} location={Location} bodyLength={Length} snippet={Snippet}",
+                context, (int)response.StatusCode, response.RequestMessage?.RequestUri,
+                response.Headers.Location?.ToString() ?? "(none)", body.Length, snippet);
+
+            response.EnsureSuccessStatusCode();
         }
 
         // When an expected node is missing we can't tell a genuinely empty division from a

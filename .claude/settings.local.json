@@ -11,7 +11,10 @@
       "Bash(curl -s -D - -o /dev/null -A \"Mozilla/5.0 Chrome/126.0.0.0\" \"https://fulltime.thefa.com/table.html\")",
       "Bash(curl -s -D - -o /dev/null -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) Chrome/126.0.0.0 Safari/537.36\" \"https://fulltime.thefa.com/\")",
       "Bash(grep -oiE 'no fixtures[^<]{0,60}|fixtures-empty|empty-state[^\"]*' fx2.html)",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Bash(curl *)",
+      "Read(//usr/share/**)",
+      "Bash(find / -maxdepth 4 -name dotnet -type f)"
     ]
   }
 }

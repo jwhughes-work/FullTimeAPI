@@ -9,10 +9,14 @@ namespace FullTimeAPI.Extensions
         public static IServiceCollection AddResilientHttpClients(this IServiceCollection services)
         {
             // Retry policy with exponential backoff.
-            // Only retries transient failures (network errors, 5xx, 408) and timeouts -
-            // retrying genuine 4xx responses (e.g. 404) just wastes time before failing anyway.
+            // Retries transient failures (network errors, 5xx, 408), timeouts, and 3xx redirects.
+            // 3xx is included because with AllowAutoRedirect=false FullTime occasionally bounces a
+            // valid division request to a consent/home page; that's usually transient, so retrying
+            // recovers it instead of failing the caller. Genuine 4xx (e.g. 404) is left alone -
+            // retrying it just wastes time before failing anyway.
             var retryPolicy = HttpPolicyExtensions
                 .HandleTransientHttpError()
+                .OrResult(msg => (int)msg.StatusCode >= 300 && (int)msg.StatusCode < 400)
                 .Or<TimeoutRejectedException>()
                 .WaitAndRetryAsync(
                     retryCount: 3,

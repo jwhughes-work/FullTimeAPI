@@ -12,7 +12,7 @@ namespace FullTimeAPI.Services
         private readonly ILogger<ResultsService> _logger;
         private readonly TimeSpan _cacheDuration = TimeSpan.FromMinutes(30);
         private const string BaseUrl = "https://fulltime.thefa.com/results.html";
-        private const int MaxItemsPerPage = 10000;
+        private const int MaxItemsPerPage = 500;
 
         public ResultsService(IHttpClientFactory httpClientFactory, IMemoryCache memoryCache, ILogger<ResultsService> logger)
         {
@@ -160,18 +160,30 @@ namespace FullTimeAPI.Services
             var resultsNode = document.GetElementbyId("results-list");
             if (resultsNode == null)
             {
-                _logger.LogWarning("No results list found for season");
+                LogMissingNode($"results-list (division {divisionId})", response, content);
                 return new List<Result>();
             }
 
             var resultNodes = resultsNode.SelectNodes("div/div[3]/div/div[2]/div");
             if (resultNodes == null)
             {
-                _logger.LogWarning("No result nodes found for season");
+                LogMissingNode($"results-list rows (division {divisionId})", response, content);
                 return new List<Result>();
             }
 
             return resultNodes.Select(ParseResultRow).Where(result => result != null).ToList();
+        }
+
+        // When an expected node is missing we can't tell a genuinely empty division from a
+        // redirect/block page (both yield blank). Log enough about the actual response to tell
+        // them apart from production logs: final URL surfaces redirects, the snippet surfaces
+        // block/consent pages.
+        private void LogMissingNode(string nodeName, HttpResponseMessage response, string content)
+        {
+            var snippet = content.Length > 500 ? content.Substring(0, 500) : content;
+            _logger.LogWarning(
+                "Missing {NodeName}. status={Status} finalUrl={FinalUrl} contentLength={Length} snippet={Snippet}",
+                nodeName, (int)response.StatusCode, response.RequestMessage?.RequestUri, content.Length, snippet);
         }
 
         private Result ParseResultRow(HtmlNode item)

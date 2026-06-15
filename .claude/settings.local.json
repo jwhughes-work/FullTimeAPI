@@ -4,7 +4,14 @@
       "Bash(dotnet build *)",
       "Bash(command -v dotnet)",
       "Read(//home/jwhughes98/.dotnet/**)",
-      "Bash(\"/mnt/c/Program Files/dotnet/dotnet.exe\" build FullTimeAPI/FullTimeAPI.csproj -clp:ErrorsOnly)"
+      "Bash(\"/mnt/c/Program Files/dotnet/dotnet.exe\" build FullTimeAPI/FullTimeAPI.csproj -clp:ErrorsOnly)",
+      "Read(//tmp/**)",
+      "Bash(curl -s -o body_ua.html -w \"status=%{http_code} size=%{size_download}\\\\n\" -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/126.0.0.0 Safari/537.36\" \"https://fulltime.thefa.com/table.html?selectedDivision=842342147&itemsPerPage=10000\")",
+      "Bash(curl -s -o b1.html -w \"status=%{http_code} size=%{size_download}\\\\n\" -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36\" \"https://fulltime.thefa.com/table.html\")",
+      "Bash(curl -s -D - -o /dev/null -A \"Mozilla/5.0 Chrome/126.0.0.0\" \"https://fulltime.thefa.com/table.html\")",
+      "Bash(curl -s -D - -o /dev/null -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) Chrome/126.0.0.0 Safari/537.36\" \"https://fulltime.thefa.com/\")",
+      "Bash(grep -oiE 'no fixtures[^<]{0,60}|fixtures-empty|empty-state[^\"]*' fx2.html)",
+      "Bash(python3 -c ' *)"
     ]
   }
 }

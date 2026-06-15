@@ -12,7 +12,7 @@ namespace FullTimeAPI.Services
         private readonly ILogger<FixturesService> _logger;
         private readonly TimeSpan _cacheDuration = TimeSpan.FromMinutes(30);
         private const string BaseUrl = "https://fulltime.thefa.com/fixtures.html";
-        private const int MaxItemsPerPage = 10000;
+        private const int MaxItemsPerPage = 500;
 
         public FixturesService(IHttpClientFactory httpClientFactory, IMemoryCache memoryCache, ILogger<FixturesService> logger)
         {
@@ -64,11 +64,23 @@ namespace FullTimeAPI.Services
             var results = document.DocumentNode.SelectNodes("//div[@class='fixtures-table table-scroll']/table/tbody/tr");
             if (results == null)
             {
-                _logger.LogWarning("No fixtures found for divison {divison}", divisionId);
+                LogMissingNode($"fixtures rows (division {divisionId})", response, content);
                 return new List<Fixture>();
             }
 
             return results.Select(ParseFixtureRow).Where(fixture => fixture != null).ToList();
+        }
+
+        // When an expected node is missing we can't tell a genuinely empty division from a
+        // redirect/block page (both yield blank). Log enough about the actual response to tell
+        // them apart from production logs: final URL surfaces redirects, the snippet surfaces
+        // block/consent pages.
+        private void LogMissingNode(string nodeName, HttpResponseMessage response, string content)
+        {
+            var snippet = content.Length > 500 ? content.Substring(0, 500) : content;
+            _logger.LogWarning(
+                "Missing {NodeName}. status={Status} finalUrl={FinalUrl} contentLength={Length} snippet={Snippet}",
+                nodeName, (int)response.StatusCode, response.RequestMessage?.RequestUri, content.Length, snippet);
         }
 
         private Fixture ParseFixtureRow(HtmlNode item)

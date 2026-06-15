@@ -12,7 +12,7 @@ namespace FullTimeAPI.Services
         private readonly ILogger<LeagueService> _logger;
         private readonly TimeSpan _cacheDuration = TimeSpan.FromMinutes(30);
         private const string BaseUrl = "https://fulltime.thefa.com/table.html";
-        private const int MaxItemsPerPage = 10000;
+        private const int MaxItemsPerPage = 500;
 
         public LeagueService(IHttpClientFactory httpClientFactory, IMemoryCache memoryCache, ILogger<LeagueService> logger)
         {
@@ -127,7 +127,7 @@ namespace FullTimeAPI.Services
             var resultsNode = document.GetElementbyId("league-table");
             if (resultsNode == null)
             {
-                _logger.LogWarning("No league table found");
+                LogMissingNode("league-table", response, content);
                 return new LeagueStandings();
             }
 
@@ -136,7 +136,7 @@ namespace FullTimeAPI.Services
             var resultNodes = resultsNode.SelectNodes("//div[@class='table-scroll']/table/tbody/tr");
             if (resultNodes == null)
             {
-                _logger.LogWarning("No result nodes found for division");
+                LogMissingNode("league-table rows", response, content);
                 return new LeagueStandings { DivisionName = divisionName };
             }
 
@@ -145,6 +145,18 @@ namespace FullTimeAPI.Services
                 DivisionName = divisionName,
                 Table = resultNodes.Select(ParseLeagueRow).Where(result => result != null).ToList()
             };
+        }
+
+        // When an expected node is missing we can't tell a genuinely empty division from a
+        // redirect/block page (both yield blank). Log enough about the actual response to tell
+        // them apart from production logs: final URL surfaces redirects, the snippet surfaces
+        // block/consent pages.
+        private void LogMissingNode(string nodeName, HttpResponseMessage response, string content)
+        {
+            var snippet = content.Length > 500 ? content.Substring(0, 500) : content;
+            _logger.LogWarning(
+                "Missing {NodeName}. status={Status} finalUrl={FinalUrl} contentLength={Length} snippet={Snippet}",
+                nodeName, (int)response.StatusCode, response.RequestMessage?.RequestUri, content.Length, snippet);
         }
 
         private LeagueTable ParseLeagueRow(HtmlNode item)

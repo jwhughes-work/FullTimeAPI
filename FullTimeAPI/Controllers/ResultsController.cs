@@ -30,6 +30,22 @@ namespace FullTimeAPI.Controllers
         }
 
         /// <summary>
+        /// Retrieves results for a given division and season, optionally filtered by team.
+        /// </summary>
+        /// <param name="divisionId">The ID of the division to retrieve results for.</param>
+        /// <param name="season">The season to retrieve results for.</param>
+        /// <param name="teamName">Optional: The team name (or part of) to filter results (default is an empty string).</param>
+        /// <returns>A list of results matching the division/season/team.</returns>
+        /// <response code="200">Returns the list of results</response>
+        /// <response code="500">If an error occurs</response>
+        [HttpGet("{divisionId}/season/{season}")]
+        public async Task<IActionResult> GetResultsBySeason(string divisionId, string season, [FromQuery] string teamName = "")
+        {
+            var results = await _resultsService.GetResultsByLeague(divisionId, season, teamName);
+            return Ok(results);
+        }
+
+        /// <summary>
         /// Retrieves the last 5 match results for a team to show their form guide.
         /// </summary>
         /// <param name="divisionId">The ID of the division.</param>

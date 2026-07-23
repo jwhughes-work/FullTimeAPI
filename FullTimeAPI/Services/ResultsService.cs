@@ -51,6 +51,36 @@ namespace FullTimeAPI.Services
             }
         }
 
+        public async Task<List<Result>> GetResultsByLeague(string divisionId, string selectedSeason, string specificTeamName = "")
+        {
+            if (string.IsNullOrWhiteSpace(divisionId))
+                throw new ArgumentException("League ID cannot be empty", nameof(divisionId));
+
+            string cacheKey = $"Results-{divisionId}-{selectedSeason}-{specificTeamName}";
+
+            if (_memoryCache.TryGetValue(cacheKey, out List<Result> cachedList) && cachedList?.Any() == true)
+            {
+                _logger.LogInformation("Retrieved results from cache for league {LeagueId} and season {Season}", divisionId, selectedSeason);
+                return cachedList;
+            }
+
+            try
+            {
+                var results = await FetchAndParseResults(divisionId, selectedSeason);
+                var filteredFixtures = FilterByTeam(results, specificTeamName);
+
+                if (filteredFixtures.Any())
+                    _memoryCache.Set(cacheKey, filteredFixtures, DateTimeOffset.Now.Add(_cacheDuration));
+
+                return filteredFixtures;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching results for league {divisionId} and season {Season}", divisionId, selectedSeason);
+                throw;
+            }
+        }
+
         public async Task<List<FormResult>> GetTeamForm(string divisionId, string teamName)
         {
             if (string.IsNullOrWhiteSpace(divisionId))
@@ -168,6 +198,33 @@ namespace FullTimeAPI.Services
             if (resultNodes == null)
             {
                 LogMissingNode($"results-list rows (division {divisionId})", response, content);
+                return new List<Result>();
+            }
+
+            return resultNodes.Select(ParseResultRow).Where(result => result != null).ToList();
+        }
+
+        private async Task<List<Result>> FetchAndParseResults(string divisionId, string selectedSeason)
+        {
+            var url = $"{BaseUrl}?selectedDivision={Uri.EscapeDataString(divisionId)}&itemsPerPage={MaxItemsPerPage}&selectedSeason={Uri.EscapeDataString(selectedSeason)}";
+            var response = await _httpClient.GetAsync(url);
+            await EnsureSuccessOrLog(response, $"results (division {divisionId}, season {selectedSeason})");
+
+            var content = await response.Content.ReadAsStringAsync();
+            var document = new HtmlDocument();
+            document.LoadHtml(content);
+
+            var resultsNode = document.GetElementbyId("results-list");
+            if (resultsNode == null)
+            {
+                LogMissingNode($"results-list (division {divisionId}, season {selectedSeason})", response, content);
+                return new List<Result>();
+            }
+
+            var resultNodes = resultsNode.SelectNodes("div/div[3]/div/div[2]/div");
+            if (resultNodes == null)
+            {
+                LogMissingNode($"results-list rows (division {divisionId}, season {selectedSeason})", response, content);
                 return new List<Result>();
             }
 

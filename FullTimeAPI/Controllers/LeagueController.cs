@@ -30,6 +30,21 @@ namespace FullTimeAPI.Controllers
         }
 
         /// <summary>
+        /// Retrieves the league table for a given division
+        /// </summary>
+        /// <param name="divisionId">The ID of the division to retrieve the table for.</param>
+        /// <param name="season">The season to retrieve the table for.</param>
+        /// <returns>A list fo the divion table</returns>
+        /// <response code="200">Returns the list of results</response>
+        /// <response code="500">If an error occurs</response>
+        [HttpGet("{divisionId}/season/{season}")]
+        public async Task<IActionResult> GetLeagueBySeason(string divisionId, string season)
+        {
+            var results = await _leagueService.GetLeagueStandings(divisionId, season);
+            return Ok(results);
+        }
+
+        /// <summary>
         /// Retrieves a table snapshot showing the specified team and the teams above and below it
         /// </summary>
         /// <param name="divisionId">The ID of the division to retrieve the table snapshot for.</param>

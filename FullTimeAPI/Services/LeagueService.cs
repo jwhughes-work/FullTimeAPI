@@ -50,6 +50,35 @@ namespace FullTimeAPI.Services
             }
         }
 
+        public async Task<LeagueStandings> GetLeagueStandings(string divionId, string selectedSeason)
+        {
+            if (string.IsNullOrWhiteSpace(divionId))
+                throw new ArgumentException("League ID cannot be empty", nameof(divionId));
+
+            string cacheKey = $"League-{divionId}-{selectedSeason}";
+
+            if (_memoryCache.TryGetValue(cacheKey, out LeagueStandings cachedStandings) && cachedStandings?.Table?.Any() == true)
+            {
+                _logger.LogInformation("Retrieved league {LeagueId} for season {Season}", divionId, selectedSeason);
+                return cachedStandings;
+            }
+
+            try
+            {
+                var standings = await FetchAndParseDivision(divionId, selectedSeason);
+
+                if (standings.Table.Any())
+                    _memoryCache.Set(cacheKey, standings, DateTimeOffset.Now.Add(_cacheDuration));
+
+                return standings;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching league {divionId} for season {Season}", divionId, selectedSeason);
+                throw;
+            }
+        }
+
         public async Task<LeagueStandings> GetTableSnapshot(string divisionId, string teamName)
         {
             if (string.IsNullOrWhiteSpace(divisionId))
@@ -119,6 +148,39 @@ namespace FullTimeAPI.Services
             var url = $"{BaseUrl}?selectedDivision={Uri.EscapeDataString(divisonId)}&itemsPerPage={MaxItemsPerPage}";
             var response = await _httpClient.GetAsync(url);
             await EnsureSuccessOrLog(response, $"league table (division {divisonId})");
+
+            var content = await response.Content.ReadAsStringAsync();
+            var document = new HtmlDocument();
+            document.LoadHtml(content);
+
+            var resultsNode = document.GetElementbyId("league-table");
+            if (resultsNode == null)
+            {
+                LogMissingNode("league-table", response, content);
+                return new LeagueStandings();
+            }
+
+            var divisionName = Helpers.NormalizeText(resultsNode.SelectSingleNode("div/div[1]/div[1]/h2")?.InnerText ?? string.Empty);
+
+            var resultNodes = resultsNode.SelectNodes("//div[@class='table-scroll']/table/tbody/tr");
+            if (resultNodes == null)
+            {
+                LogMissingNode("league-table rows", response, content);
+                return new LeagueStandings { DivisionName = divisionName };
+            }
+
+            return new LeagueStandings
+            {
+                DivisionName = divisionName,
+                Table = resultNodes.Select(ParseLeagueRow).Where(result => result != null).ToList()
+            };
+        }
+
+        private async Task<LeagueStandings> FetchAndParseDivision(string divisonId, string selectedSeason)
+        {
+            var url = $"{BaseUrl}?selectedDivision={Uri.EscapeDataString(divisonId)}&itemsPerPage={MaxItemsPerPage}&selectedSeason={Uri.EscapeDataString(selectedSeason)}";
+            var response = await _httpClient.GetAsync(url);
+            await EnsureSuccessOrLog(response, $"league table (division {divisonId}, season {selectedSeason})");
 
             var content = await response.Content.ReadAsStringAsync();
             var document = new HtmlDocument();

@@ -14,7 +14,8 @@
       "Bash(python3 -c ' *)",
       "Bash(curl *)",
       "Read(//usr/share/**)",
-      "Bash(find / -maxdepth 4 -name dotnet -type f)"
+      "Bash(find / -maxdepth 4 -name dotnet -type f)",
+      "Bash(\"/mnt/c/Program Files/dotnet/dotnet.exe\" build FullTimeAPI/FullTimeAPI.csproj)"
     ]
   }
 }

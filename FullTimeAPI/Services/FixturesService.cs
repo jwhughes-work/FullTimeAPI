@@ -51,6 +51,36 @@ namespace FullTimeAPI.Services
             }
         }
 
+        public async Task<List<Fixture>> GetFixturesByDivision(string divisionId, string selectedSeason, string specificTeamName = "")
+        {
+            if (string.IsNullOrWhiteSpace(divisionId))
+                throw new ArgumentException("division ID cannot be empty", nameof(divisionId));
+
+            string cacheKey = $"Fixtures-{divisionId}-{selectedSeason}-{specificTeamName}";
+
+            if (_memoryCache.TryGetValue(cacheKey, out List<Fixture> cachedList) && cachedList?.Any() == true)
+            {
+                _logger.LogInformation("Retrieved fixtures from cache for division {LeagueId} and season {Season}", divisionId, selectedSeason);
+                return cachedList;
+            }
+
+            try
+            {
+                var fixtures = await FetchAndParseFixtures(divisionId, selectedSeason);
+                var filteredFixtures = FilterByTeam(fixtures, specificTeamName);
+
+                if (filteredFixtures.Any())
+                    _memoryCache.Set(cacheKey, filteredFixtures, DateTimeOffset.Now.Add(_cacheDuration));
+
+                return filteredFixtures;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching fixtures for division {LeagueId} and season {Season}", divisionId, selectedSeason);
+                throw;
+            }
+        }
+
         private async Task<List<Fixture>> FetchAndParseFixtures(string divisionId)
         {
             var url = $"{BaseUrl}?selectedDivision={Uri.EscapeDataString(divisionId)}&itemsPerPage={MaxItemsPerPage}";
@@ -65,6 +95,26 @@ namespace FullTimeAPI.Services
             if (results == null)
             {
                 LogMissingNode($"fixtures rows (division {divisionId})", response, content);
+                return new List<Fixture>();
+            }
+
+            return results.Select(ParseFixtureRow).Where(fixture => fixture != null).ToList();
+        }
+
+        private async Task<List<Fixture>> FetchAndParseFixtures(string divisionId, string selectedSeason)
+        {
+            var url = $"{BaseUrl}?selectedDivision={Uri.EscapeDataString(divisionId)}&itemsPerPage={MaxItemsPerPage}&selectedSeason={Uri.EscapeDataString(selectedSeason)}";
+            var response = await _httpClient.GetAsync(url);
+            await EnsureSuccessOrLog(response, $"fixtures (division {divisionId}, season {selectedSeason})");
+
+            var content = await response.Content.ReadAsStringAsync();
+            var document = new HtmlDocument();
+            document.LoadHtml(content);
+
+            var results = document.DocumentNode.SelectNodes("//div[@class='fixtures-table table-scroll']/table/tbody/tr");
+            if (results == null)
+            {
+                LogMissingNode($"fixtures rows (division {divisionId}, season {selectedSeason})", response, content);
                 return new List<Fixture>();
             }
 

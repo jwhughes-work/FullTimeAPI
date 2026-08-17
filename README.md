@@ -115,8 +115,15 @@ Most endpoints are keyed by **division ID**, which you can discover through sear
 git clone https://github.com/jwhughes-work/FullTimeAPI.git
 cd FullTimeAPI
 
-# Build and run
-dotnet build
+# Build
+dotnet build --project FullTimeAPI
+
+# One-time: install the headless Chromium browser Playwright uses to fetch FA Full-Time
+pwsh FullTimeAPI/bin/Debug/net9.0/playwright.ps1 install chromium
+# (no pwsh available? use: FullTimeAPI/bin/Debug/net9.0/playwright.sh install chromium on Linux,
+# or FullTimeAPI/bin/Debug/net9.0/playwright.ps1 via Windows PowerShell on Windows)
+
+# Run
 dotnet run --project FullTimeAPI
 ```
 
@@ -129,15 +136,17 @@ FullTime API is an ASP.NET Core Web API that scrapes the FA Full-Time website on
 ```text
 Client ──▶ Controller ──▶ Service ──▶ IMemoryCache (hit? return)
                               │
-                              └──▶ FA Full-Time (resilient HttpClient + Polly retries)
+                              └──▶ FA Full-Time (headless Chromium via Playwright + Polly retries)
 ```
+
+FA Full-Time sits behind Cloudflare, which fingerprints the TLS handshake and blocks .NET's `HttpClient` outright regardless of headers. Requests are instead made through a shared headless Chromium instance (`Microsoft.Playwright`), which presents a genuine browser TLS fingerprint. Run `playwright install chromium` once after restoring packages to fetch the browser binary (see [Getting Started](#-getting-started)).
 
 | Concern | Implementation |
 |---|---|
 | Framework | ASP.NET Core (.NET 9) |
 | Scraping | HtmlAgilityPack |
 | Caching | In-memory, ~30 minute TTL per query |
-| Resilience | Polly retry policies via `IHttpClientFactory` |
+| Resilience | Headless Chromium (Playwright) + Polly retry policies |
 | Rate limiting | AspNetCoreRateLimit (per-IP: 300/min, 500/15min, 1000/hr) |
 | Docs | Swagger / Swashbuckle with XML comments |
 | Errors | Global exception-handling middleware |

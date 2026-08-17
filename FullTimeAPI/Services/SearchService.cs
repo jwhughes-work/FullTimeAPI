@@ -7,16 +7,22 @@ namespace FullTimeAPI.Services
 {
     public class SearchService : ISearchService
     {
-        private readonly HttpClient _httpClient;
+        private readonly IPageFetcher _pageFetcher;
         private readonly IMemoryCache _memoryCache;
         private readonly ILogger<SearchService> _logger;
         private readonly TimeSpan _cacheDuration = TimeSpan.FromMinutes(30);
-        
-        public SearchService(IHttpClientFactory httpClientFactory, IMemoryCache memoryCache, ILogger<SearchService> logger)
+
+        public SearchService(IPageFetcher pageFetcher, IMemoryCache memoryCache, ILogger<SearchService> logger)
         {
-            _httpClient = httpClientFactory?.CreateClient("resilient") ?? throw new ArgumentNullException(nameof(httpClientFactory));
+            _pageFetcher = pageFetcher ?? throw new ArgumentNullException(nameof(pageFetcher));
             _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        }
+
+        private static void EnsureSuccess(PageFetchResult result, string url)
+        {
+            if (!result.IsSuccess)
+                throw new HttpRequestException($"FullTime request failed with status {result.StatusCode} for {url}");
         }
 
         #region FindClubs
@@ -51,10 +57,10 @@ namespace FullTimeAPI.Services
         private async Task<List<ClubSearch>> FetchAndParseClubSearch(string team)
         {
             var url = $"https://fulltime.thefa.com/home/search.html?partLeagueOrClubNameSearchFilter={Uri.EscapeDataString(team)}&clubSearchFilter=true";
-            var response = await _httpClient.GetAsync(url);
-            response.EnsureSuccessStatusCode();
+            var result = await _pageFetcher.GetHtmlAsync(url);
+            EnsureSuccess(result, url);
 
-            var content = await response.Content.ReadAsStringAsync();
+            var content = result.Content;
             var document = new HtmlDocument();
             document.LoadHtml(content);
 
@@ -138,10 +144,10 @@ namespace FullTimeAPI.Services
         private async Task<List<TeamSearch>> FetchAndParseTeamSearch(string clubId)
         {
             var url = $"https://fulltime.thefa.com/home/club/{Uri.EscapeDataString(clubId)}.html";
-            var response = await _httpClient.GetAsync(url);
-            response.EnsureSuccessStatusCode();
+            var result = await _pageFetcher.GetHtmlAsync(url);
+            EnsureSuccess(result, url);
 
-            var content = await response.Content.ReadAsStringAsync();
+            var content = result.Content;
             var document = new HtmlDocument();
             document.LoadHtml(content);
 
@@ -233,10 +239,10 @@ namespace FullTimeAPI.Services
         private async Task<List<LeagueSearch>> FetchAndParseLeagueSearch(string team)
         {
             var url = $"https://fulltime.thefa.com/home/search.html?partLeagueOrClubNameSearchFilter={Uri.EscapeDataString(team)}&clubSearchFilter=false";
-            var response = await _httpClient.GetAsync(url);
-            response.EnsureSuccessStatusCode();
+            var result = await _pageFetcher.GetHtmlAsync(url);
+            EnsureSuccess(result, url);
 
-            var content = await response.Content.ReadAsStringAsync();
+            var content = result.Content;
             var document = new HtmlDocument();
             document.LoadHtml(content);
 
@@ -323,10 +329,10 @@ namespace FullTimeAPI.Services
         private async Task<List<DivisionSearch>> FetchAndParseDivisions(string leagueId)
         {
             var url = $"https://fulltime.thefa.com/index.html?league={Uri.EscapeDataString(leagueId)}";
-            var response = await _httpClient.GetAsync(url);
-            response.EnsureSuccessStatusCode();
+            var result = await _pageFetcher.GetHtmlAsync(url);
+            EnsureSuccess(result, url);
 
-            var content = await response.Content.ReadAsStringAsync();
+            var content = result.Content;
             var document = new HtmlDocument();
             document.LoadHtml(content);
             

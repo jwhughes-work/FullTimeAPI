@@ -1,7 +1,6 @@
 using FullTimeAPI.Services;
 using FullTimeAPI.Services.Interfaces;
 using FullTimeAPI.Middleware;
-using FullTimeAPI.Extensions;
 using Microsoft.OpenApi.Models;
 using AspNetCoreRateLimit;
 using System.Reflection;
@@ -47,10 +46,12 @@ builder.Services.Configure<IpRateLimitPolicies>(builder.Configuration.GetSection
 builder.Services.AddInMemoryRateLimiting();
 builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>();
 
-// Add resilient HTTP clients
-builder.Services.AddResilientHttpClients();
+// FullTime sits behind Cloudflare, which blocks HttpClient on TLS fingerprint alone regardless
+// of headers - a real headless browser is used instead. Singleton: one Chromium instance is
+// shared across requests, with a fresh browser context per fetch.
+builder.Services.AddSingleton<IPageFetcher, PlaywrightPageFetcher>();
 
-// Register services with named HTTP client
+// Register services
 builder.Services.AddScoped<IFixturesService, FixturesService>();
 builder.Services.AddScoped<IResultsService, ResultsService>();
 builder.Services.AddScoped<ILeagueService, LeagueService>();

@@ -7,16 +7,16 @@ namespace FullTimeAPI.Services
 {
     public class LeagueService : ILeagueService
     {
-        private readonly HttpClient _httpClient;
+        private readonly IPageFetcher _pageFetcher;
         private readonly IMemoryCache _memoryCache;
         private readonly ILogger<LeagueService> _logger;
         private readonly TimeSpan _cacheDuration = TimeSpan.FromMinutes(30);
         private const string BaseUrl = "https://fulltime.thefa.com/table.html";
         private const int MaxItemsPerPage = 500;
 
-        public LeagueService(IHttpClientFactory httpClientFactory, IMemoryCache memoryCache, ILogger<LeagueService> logger)
+        public LeagueService(IPageFetcher pageFetcher, IMemoryCache memoryCache, ILogger<LeagueService> logger)
         {
-            _httpClient = httpClientFactory?.CreateClient("resilient") ?? throw new ArgumentNullException(nameof(httpClientFactory));
+            _pageFetcher = pageFetcher ?? throw new ArgumentNullException(nameof(pageFetcher));
             _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
@@ -146,17 +146,17 @@ namespace FullTimeAPI.Services
         private async Task<LeagueStandings> FetchAndParseDivision(string divisonId)
         {
             var url = $"{BaseUrl}?selectedDivision={Uri.EscapeDataString(divisonId)}&itemsPerPage={MaxItemsPerPage}";
-            var response = await _httpClient.GetAsync(url);
-            await EnsureSuccessOrLog(response, $"league table (division {divisonId})");
+            var result = await _pageFetcher.GetHtmlAsync(url);
+            EnsureSuccessOrLog(result, $"league table (division {divisonId})");
 
-            var content = await response.Content.ReadAsStringAsync();
+            var content = result.Content;
             var document = new HtmlDocument();
             document.LoadHtml(content);
 
             var resultsNode = document.GetElementbyId("league-table");
             if (resultsNode == null)
             {
-                LogMissingNode("league-table", response, content);
+                LogMissingNode("league-table", result);
                 return new LeagueStandings();
             }
 
@@ -165,7 +165,7 @@ namespace FullTimeAPI.Services
             var resultNodes = resultsNode.SelectNodes("//div[@class='table-scroll']/table/tbody/tr");
             if (resultNodes == null)
             {
-                LogMissingNode("league-table rows", response, content);
+                LogMissingNode("league-table rows", result);
                 return new LeagueStandings { DivisionName = divisionName };
             }
 
@@ -179,17 +179,17 @@ namespace FullTimeAPI.Services
         private async Task<LeagueStandings> FetchAndParseDivision(string divisonId, string selectedSeason)
         {
             var url = $"{BaseUrl}?selectedDivision={Uri.EscapeDataString(divisonId)}&itemsPerPage={MaxItemsPerPage}&selectedSeason={Uri.EscapeDataString(selectedSeason)}";
-            var response = await _httpClient.GetAsync(url);
-            await EnsureSuccessOrLog(response, $"league table (division {divisonId}, season {selectedSeason})");
+            var result = await _pageFetcher.GetHtmlAsync(url);
+            EnsureSuccessOrLog(result, $"league table (division {divisonId}, season {selectedSeason})");
 
-            var content = await response.Content.ReadAsStringAsync();
+            var content = result.Content;
             var document = new HtmlDocument();
             document.LoadHtml(content);
 
             var resultsNode = document.GetElementbyId("league-table");
             if (resultsNode == null)
             {
-                LogMissingNode("league-table", response, content);
+                LogMissingNode("league-table", result);
                 return new LeagueStandings();
             }
 
@@ -198,7 +198,7 @@ namespace FullTimeAPI.Services
             var resultNodes = resultsNode.SelectNodes("//div[@class='table-scroll']/table/tbody/tr");
             if (resultNodes == null)
             {
-                LogMissingNode("league-table rows", response, content);
+                LogMissingNode("league-table rows", result);
                 return new LeagueStandings { DivisionName = divisionName };
             }
 
@@ -209,37 +209,36 @@ namespace FullTimeAPI.Services
             };
         }
 
-        // After the retry policy has given up, a non-success response (3xx redirect, 403, 5xx)
-        // would otherwise throw a bare HttpRequestException that the middleware turns into an
-        // opaque 503. Log what FullTime actually returned first - status, final URL, redirect
-        // Location and a body snippet - so the failure is diagnosable, then throw as before.
-        private async Task EnsureSuccessOrLog(HttpResponseMessage response, string context)
+        // After the fetcher's retry policy has given up, a non-success response (403, 5xx, a
+        // bounce to an unexpected page) would otherwise throw a bare exception that the
+        // middleware turns into an opaque 503. Log what FullTime actually returned first - status,
+        // final URL and a body snippet - so the failure is diagnosable, then throw as before.
+        private void EnsureSuccessOrLog(PageFetchResult result, string context)
         {
-            if (response.IsSuccessStatusCode)
+            if (result.IsSuccess)
                 return;
 
-            string body = string.Empty;
-            try { body = await response.Content.ReadAsStringAsync(); } catch { /* body may be unreadable */ }
+            var body = result.Content ?? string.Empty;
             var snippet = body.Length > 500 ? body.Substring(0, 500) : body;
 
             _logger.LogWarning(
-                "Upstream non-success for {Context}. status={Status} finalUrl={FinalUrl} location={Location} bodyLength={Length} snippet={Snippet}",
-                context, (int)response.StatusCode, response.RequestMessage?.RequestUri,
-                response.Headers.Location?.ToString() ?? "(none)", body.Length, snippet);
+                "Upstream non-success for {Context}. status={Status} finalUrl={FinalUrl} bodyLength={Length} snippet={Snippet}",
+                context, result.StatusCode, result.FinalUrl, body.Length, snippet);
 
-            response.EnsureSuccessStatusCode();
+            throw new HttpRequestException($"FullTime request failed with status {result.StatusCode} for {context}");
         }
 
         // When an expected node is missing we can't tell a genuinely empty division from a
         // redirect/block page (both yield blank). Log enough about the actual response to tell
         // them apart from production logs: final URL surfaces redirects, the snippet surfaces
         // block/consent pages.
-        private void LogMissingNode(string nodeName, HttpResponseMessage response, string content)
+        private void LogMissingNode(string nodeName, PageFetchResult result)
         {
+            var content = result.Content ?? string.Empty;
             var snippet = content.Length > 500 ? content.Substring(0, 500) : content;
             _logger.LogWarning(
                 "Missing {NodeName}. status={Status} finalUrl={FinalUrl} contentLength={Length} snippet={Snippet}",
-                nodeName, (int)response.StatusCode, response.RequestMessage?.RequestUri, content.Length, snippet);
+                nodeName, result.StatusCode, result.FinalUrl, content.Length, snippet);
         }
 
         private LeagueTable ParseLeagueRow(HtmlNode item)

@@ -7,15 +7,15 @@ namespace FullTimeAPI.Services
 {
     public class PlayerService : IPlayerService
     {
-        private readonly HttpClient _httpClient;
+        private readonly IPageFetcher _pageFetcher;
         private readonly IMemoryCache _memoryCache;
         private readonly ILogger<PlayerService> _logger;
         private readonly TimeSpan _cacheDuration = TimeSpan.FromMinutes(30);
         private const string BaseUrl = "https://fulltime.thefa.com/statsForPlayer.html";
 
-        public PlayerService(IHttpClientFactory httpClientFactory, IMemoryCache memoryCache, ILogger<PlayerService> logger)
+        public PlayerService(IPageFetcher pageFetcher, IMemoryCache memoryCache, ILogger<PlayerService> logger)
         {
-            _httpClient = httpClientFactory?.CreateClient("resilient") ?? throw new ArgumentNullException(nameof(httpClientFactory));
+            _pageFetcher = pageFetcher ?? throw new ArgumentNullException(nameof(pageFetcher));
             _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
@@ -49,10 +49,11 @@ namespace FullTimeAPI.Services
         private async Task<Player> FetchAndParsePlayerStats(string faPlayerId)
         {
             var url = $"{BaseUrl}?personID={Uri.EscapeDataString(faPlayerId)}";
-            var response = await _httpClient.GetAsync(url);
-            response.EnsureSuccessStatusCode();
+            var result = await _pageFetcher.GetHtmlAsync(url);
+            if (!result.IsSuccess)
+                throw new HttpRequestException($"FullTime request failed with status {result.StatusCode} for {url}");
 
-            var content = await response.Content.ReadAsStringAsync();
+            var content = result.Content;
             var document = new HtmlDocument();
             document.LoadHtml(content);
 

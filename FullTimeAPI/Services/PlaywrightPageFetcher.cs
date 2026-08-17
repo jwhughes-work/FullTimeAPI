@@ -50,7 +50,12 @@ namespace FullTimeAPI.Services
                 _playwright = await Playwright.CreateAsync();
                 _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
                 {
-                    Headless = true
+                    Headless = true,
+                    // Chromium's sandbox needs unprivileged user namespaces, which many VPS
+                    // kernels/containers restrict (and it refuses to start at all when the
+                    // process runs as root, which is common for bare systemd deployments).
+                    // Disabling it is the standard approach for server-side headless Chromium.
+                    Args = new[] { "--no-sandbox" }
                 });
             }
             finally

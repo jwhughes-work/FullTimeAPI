@@ -179,7 +179,7 @@ namespace FullTimeAPI.Services
 
         private async Task<List<Result>> FetchAndParseResults(string divisionId)
         {
-            var url = $"{BaseUrl}?selectedDivision={Uri.EscapeDataString(divisionId)}&itemsPerPage={MaxItemsPerPage}";
+            var url = $"{BaseUrl}?selectedDivision={Uri.EscapeDataString(divisionId)}&selectedRelatedFixtureOption=1&itemsPerPage={MaxItemsPerPage}";
             var result = await _pageFetcher.GetHtmlAsync(url);
             EnsureSuccessOrLog(result, $"results (division {divisionId})");
 
@@ -206,7 +206,7 @@ namespace FullTimeAPI.Services
 
         private async Task<List<Result>> FetchAndParseResults(string divisionId, string selectedSeason)
         {
-            var url = $"{BaseUrl}?selectedDivision={Uri.EscapeDataString(divisionId)}&itemsPerPage={MaxItemsPerPage}&selectedSeason={Uri.EscapeDataString(selectedSeason)}";
+            var url = $"{BaseUrl}?selectedDivision={Uri.EscapeDataString(divisionId)}&selectedRelatedFixtureOption=1&itemsPerPage={MaxItemsPerPage}&selectedSeason={Uri.EscapeDataString(selectedSeason)}";
             var result = await _pageFetcher.GetHtmlAsync(url);
             EnsureSuccessOrLog(result, $"results (division {divisionId}, season {selectedSeason})");
 

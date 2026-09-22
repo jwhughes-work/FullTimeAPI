@@ -246,7 +246,9 @@ namespace FullTimeAPI.Services
             var document = new HtmlDocument();
             document.LoadHtml(content);
 
-            var results = document.DocumentNode.SelectNodes("//a[contains(@href, '/Index.do?league')]");
+            // FA changed league search result links from /Index.do?league= to /index.html?league=
+            // at some point - confirmed by inspecting the live search.html markup.
+            var results = document.DocumentNode.SelectNodes("//a[contains(@href, '/index.html?league=')]");
             if (results == null)
             {
                 _logger.LogWarning("No clubs found for search {team}", team);

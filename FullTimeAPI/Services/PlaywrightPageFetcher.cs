@@ -24,11 +24,13 @@ namespace FullTimeAPI.Services
         private const string UserAgent =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
-        // Deep-linking straight to table.html/results.html gets Cloudflare's "Attention Required"
-        // block page - reproducible even in a normal browser, not just Playwright - whereas
-        // reaching the same URL by browsing from the home page first works. Mirror that here:
-        // visit home in the same context/session before the real request.
-        private const string HomeUrl = "https://fulltime.thefa.com/home/index.html";
+        // Deep-linking straight to table.html/results.html/search.html gets a Cloudflare 403 -
+        // reproducible even in a normal browser, not just Playwright. Just visiting the home page
+        // first (with or without waiting for cf_clearance) does NOT fix it - confirmed by testing.
+        // The combination that actually works, verified manually and reproduced here: accept the
+        // cookie-consent banner on the apex domain in a separate tab, THEN RELOAD (not re-navigate)
+        // the tab that already attempted the blocked URL once. See AcceptCookiesOnApexAsync.
+        private const string ApexUrl = "https://fulltime.thefa.com";
 
         public PlaywrightPageFetcher(ILogger<PlaywrightPageFetcher> logger, IConfiguration configuration)
         {
@@ -78,6 +80,16 @@ namespace FullTimeAPI.Services
                 _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
                 {
                     Headless = _headless,
+                    // Playwright's default headless=true launches "chromium-headless-shell" - a
+                    // separate, stripped-down binary with a materially different fingerprint from
+                    // real Chrome. That mismatch is what Cloudflare was actually catching: with
+                    // this flag absent, the cookie-accept+reload workaround below 403'd every
+                    // single time in default (shell) headless mode, but passed every time in fully
+                    // headed mode. Channel="chromium" (supported since Playwright 1.49) opts into
+                    // "new" headless mode instead - the real Chrome binary running windowless, not
+                    // the shell - and that alone was enough to pass in headless mode too, confirmed
+                    // twice against the live site, with no display/Xvfb required.
+                    Channel = "chromium",
                     Args = new[]
                     {
                         // Chromium's sandbox needs unprivileged user namespaces, which many VPS
@@ -86,14 +98,14 @@ namespace FullTimeAPI.Services
                         // Disabling it is the standard approach for server-side headless Chromium.
                         "--no-sandbox",
                         // /dev/shm is tiny (often 64MB) by default on VPS/containers, and Chromium
-                        // uses it for shared memory - under load it runs out and the renderer/
-                        // browser process crashes outright. This is the standard fix: fall back to
-                        // /tmp instead of shared memory.
+                        // can crash outright if it runs out under load - not confirmed as the cause
+                        // of an actual crash here, but this is the standard preventative flag for
+                        // server-side Chromium (falls back to /tmp instead of shared memory).
                         "--disable-dev-shm-usage",
-                        // Cloudflare's bot management fingerprints the CDP-driven "automation"
-                        // flag Chromium normally exposes (navigator.webdriver, etc.) and 403s
-                        // table.html/results.html specifically even with a valid session - this
-                        // is the standard flag to stop Chromium advertising itself as automated.
+                        // Speculative hardening carried over from earlier debugging of the 403s -
+                        // stops Chromium exposing navigator.webdriver/etc. as an automated browser.
+                        // Testing since has shown this flag is NOT what fixes the 403s (Channel=
+                        // "chromium" above is) - kept as harmless extra cover, not load-bearing.
                         "--disable-blink-features=AutomationControlled"
                     }
                 });
@@ -135,9 +147,10 @@ namespace FullTimeAPI.Services
 
             var page = await context.NewPageAsync();
 
-            // navigator.webdriver is true by default for a CDP-driven browser and is one of the
-            // first things Cloudflare's bot management checks - patch it back to undefined like a
-            // normal browser before any page script (including Cloudflare's own) can observe it.
+            // navigator.webdriver is true by default for a CDP-driven browser. Patching it back to
+            // undefined is a common anti-detection trick, but testing has shown it's not what
+            // actually clears FA's 403s (Channel="chromium" in EnsureBrowserAsync is) - kept as
+            // harmless extra cover, not load-bearing.
             await page.AddInitScriptAsync("Object.defineProperty(navigator, 'webdriver', { get: () => undefined });");
 
             // Skip assets we don't need for HTML scraping - keeps each fetch fast.
@@ -150,25 +163,28 @@ namespace FullTimeAPI.Services
             });
 
             var requestedPath = new Uri(url).AbsolutePath.TrimEnd('/');
+            var isApexHomePage = requestedPath.Equals("/home/index", StringComparison.OrdinalIgnoreCase);
 
             IResponse? response;
             try
             {
-                if (!requestedPath.Equals("/home/index", StringComparison.OrdinalIgnoreCase))
+                response = await page.GotoAsync(url, new PageGotoOptions
                 {
-                    await page.GotoAsync(HomeUrl, new PageGotoOptions
+                    WaitUntil = WaitUntilState.DOMContentLoaded,
+                    Timeout = 30000
+                });
+
+                if (!isApexHomePage && response != null && response.Status == 403)
+                {
+                    _logger.LogInformation("Got 403 for {Url} - retrying via cookie-accept+reload workaround", url);
+                    await AcceptCookiesOnApexAsync(context);
+
+                    response = await page.ReloadAsync(new PageReloadOptions
                     {
                         WaitUntil = WaitUntilState.DOMContentLoaded,
                         Timeout = 30000
                     });
                 }
-
-                response = await page.GotoAsync(url, new PageGotoOptions
-                {
-                    WaitUntil = WaitUntilState.DOMContentLoaded,
-                    Timeout = 30000,
-                    Referer = HomeUrl
-                });
             }
             catch (PlaywrightException ex)
             {
@@ -192,6 +208,38 @@ namespace FullTimeAPI.Services
                 FinalUrl = page.Url,
                 LooksBounced = !string.Equals(requestedPath, finalPath, StringComparison.OrdinalIgnoreCase)
             };
+        }
+
+        // Opens the apex domain in its own tab within the same context/session as the blocked
+        // page and genuinely clicks the OneTrust cookie-consent button. Waiting for cf_clearance
+        // or just visiting home was already tried and confirmed insufficient on its own - the
+        // consent click plus the caller's subsequent RELOAD of the blocked tab is what clears it.
+        private async Task AcceptCookiesOnApexAsync(IBrowserContext context)
+        {
+            var apexPage = await context.NewPageAsync();
+            try
+            {
+                await apexPage.GotoAsync(ApexUrl, new PageGotoOptions
+                {
+                    WaitUntil = WaitUntilState.NetworkIdle,
+                    Timeout = 30000
+                });
+
+                await apexPage.Locator("#onetrust-accept-btn-handler").ClickAsync(new LocatorClickOptions
+                {
+                    Timeout = 8000
+                });
+            }
+            catch (Exception ex)
+            {
+                // Non-fatal - if the banner isn't present or the click fails, the caller's reload
+                // just won't have the fix applied and will fall through to the normal retry policy.
+                _logger.LogWarning(ex, "Failed to accept cookie banner on apex domain");
+            }
+            finally
+            {
+                await apexPage.CloseAsync();
+            }
         }
 
         public async ValueTask DisposeAsync()

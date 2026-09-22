@@ -145,7 +145,7 @@ namespace FullTimeAPI.Services
 
         private async Task<LeagueStandings> FetchAndParseDivision(string divisonId)
         {
-            var url = $"{BaseUrl}?selectedDivision={Uri.EscapeDataString(divisonId)}&itemsPerPage={MaxItemsPerPage}";
+            var url = $"{BaseUrl}?selectedDivision={Uri.EscapeDataString(divisonId)}&selectedRelatedFixtureOption=1&itemsPerPage={MaxItemsPerPage}";
             var result = await _pageFetcher.GetHtmlAsync(url);
             EnsureSuccessOrLog(result, $"league table (division {divisonId})");
 
@@ -178,7 +178,7 @@ namespace FullTimeAPI.Services
 
         private async Task<LeagueStandings> FetchAndParseDivision(string divisonId, string selectedSeason)
         {
-            var url = $"{BaseUrl}?selectedDivision={Uri.EscapeDataString(divisonId)}&itemsPerPage={MaxItemsPerPage}&selectedSeason={Uri.EscapeDataString(selectedSeason)}";
+            var url = $"{BaseUrl}?selectedDivision={Uri.EscapeDataString(divisonId)}&selectedRelatedFixtureOption=1&itemsPerPage={MaxItemsPerPage}&selectedSeason={Uri.EscapeDataString(selectedSeason)}";
             var result = await _pageFetcher.GetHtmlAsync(url);
             EnsureSuccessOrLog(result, $"league table (division {divisonId}, season {selectedSeason})");
 

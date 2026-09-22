@@ -70,45 +70,80 @@ namespace FullTimeAPI.Services
                 if (_browser != null && _browser.IsConnected)
                     return;
 
-                if (_browser != null)
+                // Dispose any previous driver process before creating a new one. This must be
+                // keyed on _playwright, not _browser: if the previous LaunchAsync threw (browser
+                // never actually started), _browser stays null but _playwright was still created -
+                // gating this on "_browser != null" left that driver process orphaned forever,
+                // leaking one Node "run-driver" process per failed launch attempt (seen in
+                // production: dozens of leaked processes and several GB of memory within minutes
+                // while Chrome kept failing to launch for an unrelated reason).
+                if (_playwright != null)
                 {
-                    _logger.LogWarning("Playwright browser was disconnected (likely crashed) - relaunching");
-                    _playwright?.Dispose();
+                    _logger.LogWarning("Relaunching Playwright browser (previous instance missing, disconnected, or failed to start)");
+                    _playwright.Dispose();
+                    _playwright = null;
+                    _browser = null;
                 }
 
                 _playwright = await Playwright.CreateAsync();
-                _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+                try
                 {
-                    Headless = _headless,
-                    // Playwright's default headless=true launches "chromium-headless-shell" - a
-                    // separate, stripped-down binary with a materially different fingerprint from
-                    // real Chrome. That mismatch is what Cloudflare was actually catching: with
-                    // this flag absent, the cookie-accept+reload workaround below 403'd every
-                    // single time in default (shell) headless mode, but passed every time in fully
-                    // headed mode. Channel="chromium" (supported since Playwright 1.49) opts into
-                    // "new" headless mode instead - the real Chrome binary running windowless, not
-                    // the shell - and that alone was enough to pass in headless mode too, confirmed
-                    // twice against the live site, with no display/Xvfb required.
-                    Channel = "chromium",
-                    Args = new[]
+                    _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
                     {
-                        // Chromium's sandbox needs unprivileged user namespaces, which many VPS
-                        // kernels/containers restrict (and it refuses to start at all when the
-                        // process runs as root, which is common for bare systemd deployments).
-                        // Disabling it is the standard approach for server-side headless Chromium.
-                        "--no-sandbox",
-                        // /dev/shm is tiny (often 64MB) by default on VPS/containers, and Chromium
-                        // can crash outright if it runs out under load - not confirmed as the cause
-                        // of an actual crash here, but this is the standard preventative flag for
-                        // server-side Chromium (falls back to /tmp instead of shared memory).
-                        "--disable-dev-shm-usage",
-                        // Speculative hardening carried over from earlier debugging of the 403s -
-                        // stops Chromium exposing navigator.webdriver/etc. as an automated browser.
-                        // Testing since has shown this flag is NOT what fixes the 403s (Channel=
-                        // "chromium" above is) - kept as harmless extra cover, not load-bearing.
-                        "--disable-blink-features=AutomationControlled"
-                    }
-                });
+                        Headless = _headless,
+                        // Playwright's default headless=true launches "chromium-headless-shell" - a
+                        // separate, stripped-down binary with a materially different fingerprint from
+                        // real Chrome. That mismatch is what Cloudflare was actually catching: with
+                        // this flag absent, the cookie-accept+reload workaround below 403'd every
+                        // single time in default (shell) headless mode, but passed every time in fully
+                        // headed mode. Channel="chromium" (supported since Playwright 1.49) opts into
+                        // "new" headless mode instead - the real Chrome binary running windowless, not
+                        // the shell - and that alone was enough to pass in headless mode too, confirmed
+                        // twice against the live site, with no display/Xvfb required.
+                        Channel = "chromium",
+                        Args = new[]
+                        {
+                            // Chromium's sandbox needs unprivileged user namespaces, which many VPS
+                            // kernels/containers restrict (and it refuses to start at all when the
+                            // process runs as root, which is common for bare systemd deployments).
+                            // Disabling it is the standard approach for server-side headless Chromium.
+                            "--no-sandbox",
+                            // /dev/shm is tiny (often 64MB) by default on VPS/containers, and Chromium
+                            // can crash outright if it runs out under load - not confirmed as the cause
+                            // of an actual crash here, but this is the standard preventative flag for
+                            // server-side Chromium (falls back to /tmp instead of shared memory).
+                            "--disable-dev-shm-usage",
+                            // Speculative hardening carried over from earlier debugging of the 403s -
+                            // stops Chromium exposing navigator.webdriver/etc. as an automated browser.
+                            // Testing since has shown this flag is NOT what fixes the 403s (Channel=
+                            // "chromium" above is) - kept as harmless extra cover, not load-bearing.
+                            "--disable-blink-features=AutomationControlled",
+                            // Channel="chromium" runs the real Chrome binary, which (unlike
+                            // chromium-headless-shell) has crash reporting enabled by default as an
+                            // "official build". On the production VPS (a systemd service running
+                            // with a plain "User=" directive, no PAM session) it crashed on every
+                            // single launch with "chrome_crashpad_handler: --database is required"
+                            // before a single page could load, because crashpad couldn't resolve a
+                            // default database directory. Neither of these two flags actually fixed
+                            // that in testing - they're kept as harmless extra cover - the real fix
+                            // was environmental: the systemd unit had no $HOME at all (systemd does
+                            // NOT set it for a bare "User=" without PAM, even for a real user), so
+                            // crashpad had nothing to resolve a path from. Setting
+                            // Environment=HOME=/tmp in the unit's [Service] section is what
+                            // actually resolved it - see the README's deployment notes.
+                            "--disable-crash-reporter",
+                            "--crash-dumps-dir=/tmp"
+                        }
+                    });
+                }
+                catch
+                {
+                    // Don't leave a driver process behind if the browser itself failed to launch -
+                    // otherwise every failed attempt (e.g. the crashpad issue above) leaks one.
+                    _playwright.Dispose();
+                    _playwright = null;
+                    throw;
+                }
             }
             finally
             {

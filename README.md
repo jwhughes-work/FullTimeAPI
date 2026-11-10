@@ -150,7 +150,7 @@ Client ──▶ Controller ──▶ Service ──▶ IMemoryCache ──▶ h
                                           │ miss
                                           ▼
                               IPageFetcher (PlaywrightPageFetcher)
-                                          │  Polly: 3 retries, exponential backoff
+                                          │  Polly: 3 retries (1 for 404), exponential backoff
                                           ▼
                               Headless Chromium ──▶ fulltime.thefa.com
                                           │
@@ -173,9 +173,12 @@ Switching to the real Chrome binary has one gotcha of its own: unlike `chromium-
 
 ### Fetching details
 
-- **One shared browser.** `PlaywrightPageFetcher` is registered as a singleton and launches Chromium lazily on the first request (guarded by a `SemaphoreSlim`), so the browser start-up cost is paid once rather than per request. It also checks the browser is still connected before reusing it, relaunching if Chromium has crashed. Each fetch then gets its own fresh `BrowserContext` — an isolated cookie/cache jar — which is disposed as soon as the page has been read.
-- **Assets are blocked.** Images, stylesheets, fonts, and media are aborted at the router, since only the HTML is needed. Each page load navigates with `DOMContentLoaded` and a 30-second timeout.
-- **Retries and bounce detection.** A Polly policy retries 3 times with exponential backoff (2s, 4s, 8s) on exceptions, non-success statuses, *and* "bounced" responses — Full-Time redirects an unrecognised division ID to `/home`, so `PageFetchResult.LooksBounced` compares the requested path against the final URL and treats a mismatch as retryable. Failures are logged with the status, final URL, and a body snippet, so a genuinely empty division can be told apart from a block page.
+- **One shared browser.** `PlaywrightPageFetcher` is registered as a singleton and launches Chromium lazily on the first request (guarded by a `SemaphoreSlim`), so the browser start-up cost is paid once rather than per request. It also checks the browser is still connected before reusing it, relaunching if Chromium has crashed.
+- **One shared browser context.** All fetches share a single `BrowserContext`, so the cookies set by the cookie-accept workaround carry over to later fetches and the workaround runs about once per session instead of on every `table`/`results`/`search` fetch. Each workaround run downloads about 6 MB, against 20–50 KB for a normal page, so sharing the context cut total scraping traffic by about 95% in testing. The context is recycled after `Playwright:ContextMaxAgeMinutes` (default 360), when the browser relaunches, or when a page is still `403` after the workaround. In those cases the next attempt starts completely fresh.
+- **One page at a time.** `Playwright:MaxConcurrentPages` (default 1) caps how many pages load at once. With several parallel pages on one session, Full-Time intermittently returned empty or `404` pages during a league search's division fan-out, and parallel tabs also peg a 1-CPU VPS.
+- **Assets and trackers are blocked.** Images, stylesheets, fonts, and media are aborted at the router, as are known analytics, social, and survey hosts (Google Tag Manager/Analytics, Twitter, eCal, Survicate, and others), since only the HTML is needed. OneTrust and Cloudflare are deliberately left alone because the 403 workaround depends on them. Each page load navigates with `DOMContentLoaded` and a 30-second timeout.
+- **Traffic logging.** Every fetch logs one line with its status, time, request count, and blocked count. Set `Playwright:LogTraffic` to `true` to add downloaded KB too; it's off by default because measuring costs an extra round trip per request.
+- **Retries and bounce detection.** A Polly policy retries 3 times with exponential backoff (2s, 4s, 8s) on exceptions, non-success statuses (except `404`), *and* "bounced" responses. A `404` gets a single retry after 2s: most are genuine missing IDs, but Full-Time occasionally returns a transient `404` for a league that loads fine moments later. — Full-Time redirects an unrecognised division ID to `/home`, so `PageFetchResult.LooksBounced` compares the requested path against the final URL and treats a mismatch as retryable. Failures are logged with the status, final URL, and a body snippet, so a genuinely empty division can be told apart from a block page.
 - **`--no-sandbox`.** Chromium is launched with the sandbox disabled: it needs unprivileged user namespaces (restricted on many VPS kernels and containers), and refuses to start as root at all — which is common for bare systemd deployments.
 
 | Concern | Implementation |

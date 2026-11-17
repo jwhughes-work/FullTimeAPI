@@ -17,18 +17,16 @@ namespace FullTimeAPI.Services
         private readonly bool _headless;
         private readonly int _debugPauseSeconds;
         private readonly bool _logTraffic;
-        private readonly TimeSpan _contextMaxAge;
-        private readonly SemaphoreSlim _initLock = new(1, 1);
-        private readonly SemaphoreSlim _contextLock = new(1, 1);
+        private readonly TimeSpan _sessionMaxAge;
+        private readonly SemaphoreSlim _sessionLock = new(1, 1);
         private readonly SemaphoreSlim _cookieLock = new(1, 1);
         // Caps how many pages Chromium loads at once. Services fan out (e.g. a league search
         // fetches every matching league in parallel), and on a 1-CPU VPS an unbounded burst of
         // tabs pegs the CPU and gets the server throttled by the host.
         private readonly SemaphoreSlim _pageSlots;
         private readonly IAsyncPolicy<PageFetchResult> _retryPolicy;
-        private IPlaywright? _playwright;
-        private IBrowser? _browser;
-        private SharedContext? _sharedContext;
+        // Guarded by _sessionLock.
+        private BrowserSession? _session;
 
         // Third-party hosts the FA pages pull in (analytics, social embeds, surveys, calendar
         // widget) that contribute nothing to the HTML being scraped. Deliberately a blocklist,
@@ -81,9 +79,12 @@ namespace FullTimeAPI.Services
             // costs one extra CDP round-trip per request; flip it on to diagnose bandwidth use.
             _logTraffic = configuration.GetValue("Playwright:LogTraffic", false);
             _pageSlots = new SemaphoreSlim(Math.Max(1, configuration.GetValue("Playwright:MaxConcurrentPages", 1)));
-            // The shared context is recycled periodically so its cookies and in-memory HTTP cache
-            // can't grow or go stale indefinitely.
-            _contextMaxAge = TimeSpan.FromMinutes(Math.Max(1, configuration.GetValue("Playwright:ContextMaxAgeMinutes", 360)));
+            // The whole browser session (driver process, Chromium and the shared context) is
+            // recycled periodically - see BrowserSession for why the context alone isn't enough.
+            // Playwright:ContextMaxAgeMinutes is the setting's old name, still honoured.
+            _sessionMaxAge = TimeSpan.FromMinutes(Math.Max(1, configuration.GetValue(
+                "Playwright:SessionMaxAgeMinutes",
+                configuration.GetValue("Playwright:ContextMaxAgeMinutes", 360))));
 
             // Mirrors the previous HttpClient retry policy: retry transient failures and cases
             // where FullTime bounced the request to an unexpected page (e.g. a bad division ID
@@ -107,113 +108,94 @@ namespace FullTimeAPI.Services
             _retryPolicy = Policy.WrapAsync(generalRetry, notFoundRetry);
         }
 
-        // _browser is a singleton for the app's lifetime. If the underlying Chromium process
-        // crashes or is killed (e.g. OOM under /dev/shm pressure on a small VPS), the old code
-        // only checked "is _browser non-null" - it stayed non-null forever, so every request
-        // after a crash failed permanently with TargetClosedException until the whole app was
-        // restarted. Checking IsConnected lets a dead browser be detected and relaunched.
-        private async Task EnsureBrowserAsync()
+        // Starts a brand-new driver process, Chromium instance and shared context. Caller holds
+        // _sessionLock. If any step fails, everything already started is torn down before the
+        // exception propagates: an earlier version left the Node "run-driver" process behind
+        // whenever LaunchAsync threw, leaking one driver per failed attempt (seen in production:
+        // dozens of leaked processes and several GB of memory within minutes while Chrome kept
+        // failing to launch for an unrelated reason).
+        private async Task<BrowserSession> LaunchSessionAsync()
         {
-            if (_browser != null && _browser.IsConnected)
-                return;
-
-            await _initLock.WaitAsync();
+            var playwright = await Playwright.CreateAsync();
+            IBrowser? browser = null;
             try
             {
-                if (_browser != null && _browser.IsConnected)
-                    return;
-
-                // Dispose any previous driver process before creating a new one. This must be
-                // keyed on _playwright, not _browser: if the previous LaunchAsync threw (browser
-                // never actually started), _browser stays null but _playwright was still created -
-                // gating this on "_browser != null" left that driver process orphaned forever,
-                // leaking one Node "run-driver" process per failed launch attempt (seen in
-                // production: dozens of leaked processes and several GB of memory within minutes
-                // while Chrome kept failing to launch for an unrelated reason).
-                if (_playwright != null)
+                browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
                 {
-                    _logger.LogWarning("Relaunching Playwright browser (previous instance missing, disconnected, or failed to start)");
-                    _playwright.Dispose();
-                    _playwright = null;
-                    _browser = null;
-                }
-
-                _playwright = await Playwright.CreateAsync();
-                try
-                {
-                    _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+                    Headless = _headless,
+                    // Playwright's default headless=true launches "chromium-headless-shell" - a
+                    // separate, stripped-down binary with a materially different fingerprint from
+                    // real Chrome. That mismatch is what Cloudflare was actually catching: with
+                    // this flag absent, the cookie-accept+reload workaround below 403'd every
+                    // single time in default (shell) headless mode, but passed every time in fully
+                    // headed mode. Channel="chromium" (supported since Playwright 1.49) opts into
+                    // "new" headless mode instead - the real Chrome binary running windowless, not
+                    // the shell - and that alone was enough to pass in headless mode too, confirmed
+                    // twice against the live site, with no display/Xvfb required.
+                    Channel = "chromium",
+                    Args = new[]
                     {
-                        Headless = _headless,
-                        // Playwright's default headless=true launches "chromium-headless-shell" - a
-                        // separate, stripped-down binary with a materially different fingerprint from
-                        // real Chrome. That mismatch is what Cloudflare was actually catching: with
-                        // this flag absent, the cookie-accept+reload workaround below 403'd every
-                        // single time in default (shell) headless mode, but passed every time in fully
-                        // headed mode. Channel="chromium" (supported since Playwright 1.49) opts into
-                        // "new" headless mode instead - the real Chrome binary running windowless, not
-                        // the shell - and that alone was enough to pass in headless mode too, confirmed
-                        // twice against the live site, with no display/Xvfb required.
-                        Channel = "chromium",
-                        Args = new[]
-                        {
-                            // Chromium's sandbox needs unprivileged user namespaces, which many VPS
-                            // kernels/containers restrict (and it refuses to start at all when the
-                            // process runs as root, which is common for bare systemd deployments).
-                            // Disabling it is the standard approach for server-side headless Chromium.
-                            "--no-sandbox",
-                            // /dev/shm is tiny (often 64MB) by default on VPS/containers, and Chromium
-                            // can crash outright if it runs out under load - not confirmed as the cause
-                            // of an actual crash here, but this is the standard preventative flag for
-                            // server-side Chromium (falls back to /tmp instead of shared memory).
-                            "--disable-dev-shm-usage",
-                            // Speculative hardening carried over from earlier debugging of the 403s -
-                            // stops Chromium exposing navigator.webdriver/etc. as an automated browser.
-                            // Testing since has shown this flag is NOT what fixes the 403s (Channel=
-                            // "chromium" above is) - kept as harmless extra cover, not load-bearing.
-                            "--disable-blink-features=AutomationControlled",
-                            // Channel="chromium" runs the real Chrome binary, which (unlike
-                            // chromium-headless-shell) has crash reporting enabled by default as an
-                            // "official build". On the production VPS (a systemd service running
-                            // with a plain "User=" directive, no PAM session) it crashed on every
-                            // single launch with "chrome_crashpad_handler: --database is required"
-                            // before a single page could load, because crashpad couldn't resolve a
-                            // default database directory. Neither of these two flags actually fixed
-                            // that in testing - they're kept as harmless extra cover - the real fix
-                            // was environmental: the systemd unit had no $HOME at all (systemd does
-                            // NOT set it for a bare "User=" without PAM, even for a real user), so
-                            // crashpad had nothing to resolve a path from. Setting
-                            // Environment=HOME=/tmp in the unit's [Service] section is what
-                            // actually resolved it - see the README's deployment notes.
-                            "--disable-crash-reporter",
-                            "--crash-dumps-dir=/tmp"
-                        }
-                    });
-                }
-                catch
+                        // Chromium's sandbox needs unprivileged user namespaces, which many VPS
+                        // kernels/containers restrict (and it refuses to start at all when the
+                        // process runs as root, which is common for bare systemd deployments).
+                        // Disabling it is the standard approach for server-side headless Chromium.
+                        "--no-sandbox",
+                        // /dev/shm is tiny (often 64MB) by default on VPS/containers, and Chromium
+                        // can crash outright if it runs out under load - not confirmed as the cause
+                        // of an actual crash here, but this is the standard preventative flag for
+                        // server-side Chromium (falls back to /tmp instead of shared memory).
+                        "--disable-dev-shm-usage",
+                        // Speculative hardening carried over from earlier debugging of the 403s -
+                        // stops Chromium exposing navigator.webdriver/etc. as an automated browser.
+                        // Testing since has shown this flag is NOT what fixes the 403s (Channel=
+                        // "chromium" above is) - kept as harmless extra cover, not load-bearing.
+                        "--disable-blink-features=AutomationControlled",
+                        // Channel="chromium" runs the real Chrome binary, which (unlike
+                        // chromium-headless-shell) has crash reporting enabled by default as an
+                        // "official build". On the production VPS (a systemd service running
+                        // with a plain "User=" directive, no PAM session) it crashed on every
+                        // single launch with "chrome_crashpad_handler: --database is required"
+                        // before a single page could load, because crashpad couldn't resolve a
+                        // default database directory. Neither of these two flags actually fixed
+                        // that in testing - they're kept as harmless extra cover - the real fix
+                        // was environmental: the systemd unit had no $HOME at all (systemd does
+                        // NOT set it for a bare "User=" without PAM, even for a real user), so
+                        // crashpad had nothing to resolve a path from. Setting
+                        // Environment=HOME=/tmp in the unit's [Service] section is what
+                        // actually resolved it - see the README's deployment notes.
+                        "--disable-crash-reporter",
+                        "--crash-dumps-dir=/tmp"
+                    }
+                });
+
+                var context = await browser.NewContextAsync(new BrowserNewContextOptions
                 {
-                    // Don't leave a driver process behind if the browser itself failed to launch -
-                    // otherwise every failed attempt (e.g. the crashpad issue above) leaks one.
-                    _playwright.Dispose();
-                    _playwright = null;
-                    throw;
-                }
+                    UserAgent = UserAgent,
+                    Locale = "en-GB",
+                    TimezoneId = "Europe/London",
+                    ViewportSize = new ViewportSize { Width = 1920, Height = 1080 }
+                });
+
+                _logger.LogInformation("Started new Playwright browser session");
+                return new BrowserSession(playwright, browser, context);
             }
-            finally
+            catch
             {
-                _initLock.Release();
+                // Don't leave Chromium or the driver process behind if any step failed -
+                // otherwise every failed attempt (e.g. the crashpad issue above) leaks them.
+                if (browser != null)
+                    await CloseBrowserQuietlyAsync(browser);
+                playwright.Dispose();
+                throw;
             }
         }
 
         public async Task<PageFetchResult> GetHtmlAsync(string url)
         {
-            // EnsureBrowserAsync runs inside the retry loop (not just once up front) so that if
-            // the browser is found dead partway through, a retry attempt relaunches it instead of
-            // burning all 3 attempts against a browser that's already gone.
-            var result = await _retryPolicy.ExecuteAsync(async () =>
-            {
-                await EnsureBrowserAsync();
-                return await FetchOnce(url);
-            });
+            // The session is acquired inside each attempt (FetchOnce), not once up front, so that
+            // if the browser is found dead partway through, a retry attempt relaunches it instead
+            // of burning all 3 attempts against a browser that's already gone.
+            var result = await _retryPolicy.ExecuteAsync(() => FetchOnce(url));
 
             if (!result.IsSuccess)
                 _logger.LogWarning(
@@ -228,11 +210,11 @@ namespace FullTimeAPI.Services
             // Taken per attempt (not around the whole retry loop) so a fetch waiting out a retry
             // backoff doesn't hold a slot other requests could be using.
             await _pageSlots.WaitAsync();
-            SharedContext? shared = null;
+            BrowserSession? shared = null;
             IPage? page = null;
             try
             {
-                shared = await AcquireContextAsync();
+                shared = await AcquireSessionAsync();
                 var traffic = new TrafficCounter(_logTraffic);
                 var stopwatch = System.Diagnostics.Stopwatch.StartNew();
                 page = await NewScrapingPageAsync(shared.Context, traffic);
@@ -262,9 +244,9 @@ namespace FullTimeAPI.Services
 
                         // Still blocked after the workaround: the shared session itself may have
                         // gone bad. Retire it so the retry policy's next attempt starts from a
-                        // completely fresh context, which is what every fetch used to get.
+                        // completely fresh session, which is what every fetch used to get.
                         if (response != null && response.Status == 403)
-                            await RetireContextAsync(shared, "still 403 after cookie workaround");
+                            await RetireSessionAsync(shared, "still 403 after cookie workaround");
                     }
                 }
                 catch (PlaywrightException ex)
@@ -296,7 +278,7 @@ namespace FullTimeAPI.Services
                 if (page != null)
                     await ClosePageQuietlyAsync(page);
                 if (shared != null)
-                    await ReleaseContextAsync(shared);
+                    await ReleaseSessionAsync(shared);
                 _pageSlots.Release();
             }
         }
@@ -310,7 +292,7 @@ namespace FullTimeAPI.Services
 
             // navigator.webdriver is true by default for a CDP-driven browser. Patching it back to
             // undefined is a common anti-detection trick, but testing has shown it's not what
-            // actually clears FA's 403s (Channel="chromium" in EnsureBrowserAsync is) - kept as
+            // actually clears FA's 403s (Channel="chromium" in LaunchSessionAsync is) - kept as
             // harmless extra cover, not load-bearing.
             await page.AddInitScriptAsync("Object.defineProperty(navigator, 'webdriver', { get: () => undefined });");
 
@@ -353,33 +335,38 @@ namespace FullTimeAPI.Services
         // Every fetch used to get a brand-new context, so it never had the cookies from the last
         // successful cookie-accept - meaning every table/results/search fetch hit the 403 and
         // re-ran the whole workaround (measured: ~6.3 MB and ~140 requests each, vs ~30-50 KB for
-        // a plain page). Sharing one context across fetches keeps those cookies, so the
+        // a plain page). Sharing one session across fetches keeps those cookies, so the
         // workaround runs once per session instead of once per fetch.
-        private async Task<SharedContext> AcquireContextAsync()
+        //
+        // A session that has died (Chromium crashed or was killed, e.g. OOM under /dev/shm
+        // pressure on a small VPS) is detected through IsConnected and replaced, so requests
+        // after a crash don't keep failing with TargetClosedException until the app restarts.
+        private async Task<BrowserSession> AcquireSessionAsync()
         {
-            await _contextLock.WaitAsync();
+            await _sessionLock.WaitAsync();
             try
             {
-                var current = _sharedContext;
-                if (current != null && (!ReferenceEquals(current.Browser, _browser) || DateTime.UtcNow - current.CreatedUtc > _contextMaxAge))
+                var current = _session;
+                if (current != null)
                 {
-                    _logger.LogInformation("Recycling shared browser context (browser relaunched or context older than {MaxAge})", _contextMaxAge);
-                    await RetireLockedAsync(current);
-                    current = null;
+                    string? reason = null;
+                    if (!current.Browser.IsConnected)
+                        reason = "browser disconnected";
+                    else if (DateTime.UtcNow - current.CreatedUtc > _sessionMaxAge)
+                        reason = $"older than {_sessionMaxAge}";
+
+                    if (reason != null)
+                    {
+                        _logger.LogInformation("Recycling Playwright browser session ({Reason})", reason);
+                        await RetireLockedAsync(current);
+                        current = null;
+                    }
                 }
 
                 if (current == null)
                 {
-                    var browser = _browser!;
-                    var context = await browser.NewContextAsync(new BrowserNewContextOptions
-                    {
-                        UserAgent = UserAgent,
-                        Locale = "en-GB",
-                        TimezoneId = "Europe/London",
-                        ViewportSize = new ViewportSize { Width = 1920, Height = 1080 }
-                    });
-                    current = new SharedContext(context, browser);
-                    _sharedContext = current;
+                    current = await LaunchSessionAsync();
+                    _session = current;
                 }
 
                 current.Users++;
@@ -387,57 +374,57 @@ namespace FullTimeAPI.Services
             }
             finally
             {
-                _contextLock.Release();
+                _sessionLock.Release();
             }
         }
 
-        private async Task ReleaseContextAsync(SharedContext shared)
+        private async Task ReleaseSessionAsync(BrowserSession shared)
         {
-            await _contextLock.WaitAsync();
+            await _sessionLock.WaitAsync();
             try
             {
                 shared.Users--;
                 if (shared.Retired && shared.Users == 0)
-                    await CloseContextQuietlyAsync(shared.Context);
+                    await CloseSessionQuietlyAsync(shared);
             }
             finally
             {
-                _contextLock.Release();
+                _sessionLock.Release();
             }
         }
 
-        private async Task RetireContextAsync(SharedContext shared, string reason)
+        private async Task RetireSessionAsync(BrowserSession shared, string reason)
         {
-            await _contextLock.WaitAsync();
+            await _sessionLock.WaitAsync();
             try
             {
                 if (shared.Retired)
                     return;
-                _logger.LogWarning("Retiring shared browser context: {Reason}", reason);
+                _logger.LogWarning("Retiring Playwright browser session: {Reason}", reason);
                 await RetireLockedAsync(shared);
             }
             finally
             {
-                _contextLock.Release();
+                _sessionLock.Release();
             }
         }
 
-        // Caller holds _contextLock. A retired context stops being handed out immediately, but
-        // is only closed once the last in-flight fetch using it has released it.
-        private async Task RetireLockedAsync(SharedContext shared)
+        // Caller holds _sessionLock. A retired session stops being handed out immediately, but
+        // is only shut down once the last in-flight fetch using it has released it.
+        private async Task RetireLockedAsync(BrowserSession shared)
         {
             shared.Retired = true;
-            if (ReferenceEquals(_sharedContext, shared))
-                _sharedContext = null;
+            if (ReferenceEquals(_session, shared))
+                _session = null;
             if (shared.Users == 0)
-                await CloseContextQuietlyAsync(shared.Context);
+                await CloseSessionQuietlyAsync(shared);
         }
 
         // Several fetches can hit the 403 at the same moment (e.g. a burst after the context was
         // recycled). Only the first needs to visit the apex page; the rest wait for it and then
         // just reload, since the cookies it sets are shared through the context.
         // Returns true if this call actually ran the apex visit.
-        private async Task<bool> EnsureCookiesAcceptedAsync(SharedContext shared, TrafficCounter traffic, DateTime blockedAtUtc)
+        private async Task<bool> EnsureCookiesAcceptedAsync(BrowserSession shared, TrafficCounter traffic, DateTime blockedAtUtc)
         {
             await _cookieLock.WaitAsync();
             try
@@ -502,33 +489,61 @@ namespace FullTimeAPI.Services
             }
         }
 
-        private static async Task CloseContextQuietlyAsync(IBrowserContext context)
+        private static async Task CloseBrowserQuietlyAsync(IBrowser browser)
         {
             try
             {
-                await context.CloseAsync();
+                await browser.CloseAsync();
             }
             catch (PlaywrightException)
             {
-                // Browser already gone.
+                // Already gone - nothing to clean up.
             }
         }
 
-        private sealed class SharedContext
+        // Shuts down everything the session owns: the context, Chromium, and the Node driver
+        // process. Closing the browser also closes its context, so no separate context close.
+        private async Task CloseSessionQuietlyAsync(BrowserSession session)
         {
-            public SharedContext(IBrowserContext context, IBrowser browser)
+            if (session.Closed)
+                return;
+            session.Closed = true;
+
+            await CloseBrowserQuietlyAsync(session.Browser);
+            try
             {
-                Context = context;
+                session.Playwright.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to dispose Playwright driver");
+            }
+        }
+
+        // One Node driver process + one Chromium + one shared context, created and retired as a
+        // unit. Recycling only the context used to leave the driver and browser alive for the
+        // app's whole lifetime, and the driver's memory kept climbing even though every page and
+        // retired context was closed: in production the "run-driver" Node process reached
+        // ~1.46 GB (36% of the VPS's RAM) after four days of uptime. Restarting the whole unit is
+        // the only reliable way to hand that memory back.
+        private sealed class BrowserSession
+        {
+            public BrowserSession(IPlaywright playwright, IBrowser browser, IBrowserContext context)
+            {
+                Playwright = playwright;
                 Browser = browser;
+                Context = context;
             }
 
-            public IBrowserContext Context { get; }
+            public IPlaywright Playwright { get; }
             public IBrowser Browser { get; }
+            public IBrowserContext Context { get; }
             public DateTime CreatedUtc { get; } = DateTime.UtcNow;
             public DateTime CookiesAcceptedUtc { get; set; } = DateTime.MinValue;
-            // Guarded by _contextLock.
+            // Guarded by _sessionLock.
             public int Users { get; set; }
             public bool Retired { get; set; }
+            public bool Closed { get; set; }
         }
 
         // Per-fetch tally of what the browser actually downloaded, logged once the fetch is done,
@@ -589,24 +604,10 @@ namespace FullTimeAPI.Services
 
         public async ValueTask DisposeAsync()
         {
-            if (_sharedContext != null)
-                await CloseContextQuietlyAsync(_sharedContext.Context);
+            if (_session != null)
+                await CloseSessionQuietlyAsync(_session);
 
-            if (_browser != null && _browser.IsConnected)
-            {
-                try
-                {
-                    await _browser.CloseAsync();
-                }
-                catch (PlaywrightException)
-                {
-                    // Already gone - nothing to clean up.
-                }
-            }
-
-            _playwright?.Dispose();
-            _initLock.Dispose();
-            _contextLock.Dispose();
+            _sessionLock.Dispose();
             _cookieLock.Dispose();
             _pageSlots.Dispose();
         }
